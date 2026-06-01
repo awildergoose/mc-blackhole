@@ -1,5 +1,3 @@
-use fastnbt::ByteArray;
-
 use crate::{
     proto::{game_profile::GameProfile, varint::VarInt},
     quickpkt,
@@ -15,4 +13,3 @@ quickpkt!(
     0x00,
     username => String
 );
-quickpkt!(sc_plugin_message, 0x1B, channel => String, data => ByteArray);

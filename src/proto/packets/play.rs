@@ -1,3 +1,6 @@
+use fastnbt::ByteArray;
+
+// use uuid::Uuid;
 use crate::{codecs::array::Array, proto::varint::VarInt, quickpkt};
 
 quickpkt!(sc_keep_alive, 0x2B, rand => i64);
@@ -26,3 +29,13 @@ quickpkt!(sc_login, 0x30,
     sea_level => VarInt,
     secure_chat => bool
 );
+
+quickpkt!(cs_move_player_pos_rot, 0x1E, x => f64, y => f64, z => f64, yaw => f32, pitch => f32, flags => u8);
+quickpkt!(sc_plugin_message, 0x18, channel => String, data => ByteArray);
+
+// pub struct ScoreboardPlayer {
+//     uuid: Uuid,
+//     actions: Array<ScoreboardPlayerAction>
+// }
+
+// quickpkt!(sc_player_info_update, 0x44, bitset => Array<i64>, players => Array<ScoreboardPlayer>);

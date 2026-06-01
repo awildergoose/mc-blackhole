@@ -1,4 +1,5 @@
 use bytes::{BufMut, BytesMut};
+use fastnbt::ByteArray;
 use uuid::Uuid;
 
 use crate::{
@@ -13,7 +14,10 @@ use crate::{
                 login_start::LoginStart, login_success::LoginSuccess,
                 set_compression::SetCompression,
             },
-            play::sc_login::ScLogin,
+            play::{
+                cs_move_player_pos_rot::CsMovePlayerPosRot, sc_login::ScLogin,
+                sc_plugin_message::ScPluginMessage,
+            },
         },
         rawchunktest::CHUNK_TEST,
         regs::{self},
@@ -63,10 +67,11 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
 
     let mut state = 0; // 0 = configure, 1 = play
     let mut client_tick = 0;
+    let mut pos = (0.0, 0.0, 0.0);
 
     loop {
         match conn.read_packet().await {
-            Ok((id, _data)) => {
+            Ok((id, mut data)) => {
                 match state {
                     0 => {
                         if id == 0x00 {
@@ -144,6 +149,13 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                         }
 
                         println!("Play packet received packet id {id:X}");
+
+                        if id == 0x1E {
+                            let d = CsMovePlayerPosRot::decode(&mut data)?;
+                            pos.0 = d.x;
+                            pos.1 = d.y;
+                            pos.2 = d.z;
+                        }
 
                         if id == 0x03 {
                             // we're now in play, lets send Login
@@ -235,7 +247,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             body.put_var_int(0)?;
 
                             body.put_f64(0.0)?;
-                            body.put_f64(64.0)?;
+                            body.put_f64(70.0)?;
                             body.put_f64(0.0)?;
 
                             body.put_f64(0.0)?;
@@ -248,12 +260,68 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             body.put_u32(0)?;
                             conn.write_packet(0x46, &body).await?;
 
+                            println!("sent player pos sync");
+
+                            // send tick state
+                            conn.write_packet(0x7D, &[0x41, 0xA0, 0x00, 0x00, 0x00])
+                                .await?;
+                            conn.write_packet(0x7E, &[0x00]).await?;
+
+                            // brand
+                            conn.write_packet(
+                                ScPluginMessage::ID,
+                                &ScPluginMessage::new(
+                                    "minecraft:brand".to_owned(),
+                                    ByteArray::new(
+                                        Vec::from(b"\x0Ablack_hole")
+                                            .iter()
+                                            .map(|c| *c as i8)
+                                            .collect(),
+                                    ),
+                                )
+                                .encoded()?,
+                            )
+                            .await?;
+
+                            // some BULLLSHIIIIIIIT
+                            conn.write_packet(
+                                0x3E,
+                                &[0x00, 0x3D, 0x4C, 0xCC, 0xCD, 0x3D, 0xCC, 0xCC, 0xCD],
+                            )
+                            .await?;
+
+                            // tab list
+                            body = PacketBytes::new();
+                            // 0x08 (list) | 0x01 (add player)
+                            body.put_u8(0x09)?; // the bit
+
+                            body.put_var_int(1)?; // collection len
+                            body.put_uuid(ls.game_profile.uuid)?; // player uuid
+
+                            body.put_string(ls.game_profile.username.clone())?; // player name
+                            body.put_var_int(0)?; // count of properties
+
+                            body.put_bool(true)?; // listed
+
+                            conn.write_packet(0x44, &body).await?;
+                            // // body.put_game_profile(ls.game_profile.clone())?;
+                            // writeByte(client_fd, 0x3F); // Packet ID
+
+                            // writeByte(client_fd, 0x01); // EnumSet: Add Player
+                            // writeByte(client_fd, 1); // Player count (1 per packet)
+
+                            // // Player UUID
+                            // send_all(client_fd, player.uuid, 16);
+                            // // Player name
+                            // writeByte(client_fd, strlen(player.name));
+                            // send_all(client_fd, player.name, strlen(player.name));
+                            // // Properties (don't send any)
+                            // writeByte(client_fd, 0);
+
                             // keep alive
                             body = PacketBytes::new();
                             body.put_i64(1)?;
                             conn.write_packet(0x2B, &body).await?;
-
-                            println!("sent player pos sync");
                         }
                     }
                     _ => unreachable!(),
