@@ -32,6 +32,13 @@ quickpkt!(sc_login, 0x30,
 
 quickpkt!(cs_move_player_pos_rot, 0x1E, x => f64, y => f64, z => f64, yaw => f32, pitch => f32, flags => u8);
 quickpkt!(sc_plugin_message, 0x18, channel => String, data => ByteArray);
+quickpkt!(sc_player_position, 0x46,
+    teleport_id => VarInt,
+    x => f64, y => f64, z => f64,
+    vx => f64, vy => f64, vz => f64,
+    yaw => f32, pitch => f32,
+    flags => u32
+);
 
 // pub struct ScoreboardPlayer {
 //     uuid: Uuid,

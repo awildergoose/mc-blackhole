@@ -16,7 +16,7 @@ use crate::{
             },
             play::{
                 cs_move_player_pos_rot::CsMovePlayerPosRot, sc_login::ScLogin,
-                sc_plugin_message::ScPluginMessage,
+                sc_player_position::ScPlayerPosition, sc_plugin_message::ScPluginMessage,
             },
         },
         rawchunktest::CHUNK_TEST,
@@ -155,6 +155,16 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             pos.0 = d.x;
                             pos.1 = d.y;
                             pos.2 = d.z;
+
+                            // conn.write_packet(
+                            //     ScPlayerPosition::ID,
+                            //     &ScPlayerPosition::new(
+                            //         -1, pos.0, pos.1, pos.2, 0.0, 0.0, 0.0, d.yaw, d.pitch,
+                            //         0, // relative positions flags!
+                            //     )
+                            //     .encoded()?,
+                            // )
+                            // .await?;
                         }
 
                         if id == 0x03 {
@@ -196,6 +206,11 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             conn.write_packet(0x26, &body).await?;
 
                             // chunk
+                            body = PacketBytes::new();
+                            body.put_var_int(0)?;
+                            body.put_var_int(0)?;
+                            conn.write_packet(0x5C, &body).await?;
+
                             conn.write_packet(0x0C, &[]).await?;
                             let r = 4;
                             for x in -r..r {
@@ -210,37 +225,6 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             conn.write_packet(0x0B, &[0x01]).await?;
 
                             println!("sent chunk");
-
-                            // player spawn
-                            conn.write_packet(0x00, &[]).await?;
-                            body = PacketBytes::new();
-                            body.put_var_int(0)?; // ent id
-                            body.put_uuid(ls.game_profile.uuid)?; // uuid
-                            body.put_var_int(10)?; // ent type
-                            body.put_f64(0.0)?; // x
-                            body.put_f64(0.0)?; // y
-                            body.put_f64(0.0)?; // z
-                            body.put_u8(0)?; // movement lpvec3 https://minecraft.wiki/w/Java_Edition_protocol/Data_types#LpVec3
-                            body.put_u8(0)?; // pitch
-                            body.put_u8(0)?; // yaw
-                            body.put_u8(0)?; // head yaw
-                            body.put_var_int(0)?; // data
-                            conn.write_packet(0x01, &body).await?;
-
-                            // ent data
-
-                            conn.write_packet(
-                                0x61,
-                                &[
-                                    0x00, // ent id
-                                    0x09, 0x03, 0x40, 0xC0, 0x00, 0x00, 0x10, 0x00, 0x01, 0xFF,
-                                ],
-                            )
-                            .await?;
-
-                            conn.write_packet(0x00, &[]).await?;
-
-                            println!("sent player info");
 
                             // sync pos
                             body = PacketBytes::new();
@@ -304,19 +288,21 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             body.put_bool(true)?; // listed
 
                             conn.write_packet(0x44, &body).await?;
-                            // // body.put_game_profile(ls.game_profile.clone())?;
-                            // writeByte(client_fd, 0x3F); // Packet ID
 
-                            // writeByte(client_fd, 0x01); // EnumSet: Add Player
-                            // writeByte(client_fd, 1); // Player count (1 per packet)
+                            // inventory clear BULLSHITT
+                            conn.write_packet(
+                                0x12,
+                                &[
+                                    0x00, 0x01, 0x2E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                ],
+                            )
+                            .await?;
 
-                            // // Player UUID
-                            // send_all(client_fd, player.uuid, 16);
-                            // // Player name
-                            // writeByte(client_fd, strlen(player.name));
-                            // send_all(client_fd, player.name, strlen(player.name));
-                            // // Properties (don't send any)
-                            // writeByte(client_fd, 0);
+                            // TODO: send set_default_spawn_position
 
                             // keep alive
                             body = PacketBytes::new();
