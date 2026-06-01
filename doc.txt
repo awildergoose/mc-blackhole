@@ -1,0 +1,4 @@
+Serverbound means client -> server
+Clientbound means server -> client
+sc means server -> client
+cs means client -> server
