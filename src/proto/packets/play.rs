@@ -1,7 +1,5 @@
-use fastnbt::ByteArray;
-
 use crate::{
-    codecs::{array::Array, enums::Enum},
+    codecs::{array::Array, enums::Enum, string8::String8},
     create_enum,
     proto::varint::VarInt,
     quickpkt,
@@ -35,7 +33,10 @@ quickpkt!(sc_login, 0x30,
 );
 
 quickpkt!(cs_move_player_pos_rot, 0x1E, x => f64, y => f64, z => f64, yaw => f32, pitch => f32, flags => u8);
-quickpkt!(sc_plugin_message, 0x18, channel => String, data => ByteArray);
+
+// Technically we can do more than strings here but it's fine for
+// our use case for now of minecraft:brand
+quickpkt!(sc_plugin_message, 0x18, channel => String, data => String8);
 quickpkt!(sc_player_position, 0x46,
     teleport_id => VarInt,
     x => f64, y => f64, z => f64,

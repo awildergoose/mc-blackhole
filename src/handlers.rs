@@ -1,5 +1,4 @@
 use bytes::{BufMut, BytesMut};
-use fastnbt::ByteArray;
 
 use crate::{
     codecs::{base::MCDecode, game_profile::GameProfile},
@@ -151,7 +150,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                                 dimension_type: 0,
                                 dimension: "overworld".to_owned(),
                                 seed: 0,
-                                gamemode: 3,
+                                gamemode: 1,
                                 prev_gamemode: 0xFF,
                                 is_debug: false,
                                 is_flat: false,
@@ -218,12 +217,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             // brand
                             conn.write_pkt(ScPluginMessage::new(
                                 "minecraft:brand".to_owned(),
-                                ByteArray::new(
-                                    Vec::from(b"\x0Ablack_hole")
-                                        .iter()
-                                        .map(|c| *c as i8)
-                                        .collect(),
-                                ),
+                                "black_hole".to_owned(),
                             ))
                             .await?;
 

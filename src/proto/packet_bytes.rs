@@ -2,7 +2,6 @@
 use std::ops::{Deref, DerefMut};
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use fastnbt::ByteArray;
 use uuid::Uuid;
 
 use crate::{
@@ -85,21 +84,6 @@ impl PacketBytes {
         GameProfile::decode(self)
     }
 
-    pub fn put_byte_array(&mut self, ba: ByteArray) -> PutRes {
-        self.data.extend(ba.iter().copied().map(|u| u as u8));
-        Ok(())
-    }
-
-    pub fn get_byte_array(&mut self) -> GetRes<ByteArray> {
-        Ok(ByteArray::new(
-            self.data
-                .iter()
-                .copied()
-                .map(|u| u as i8)
-                .collect::<Vec<i8>>(),
-        ))
-    }
-
     pub fn put_array<T: MCEncode + MCDecode>(&mut self, arr: Array<T>) -> PutRes {
         self.put_var_int(arr.len() as i32)?;
         for ele in arr {
@@ -117,6 +101,24 @@ impl PacketBytes {
         }
 
         Ok(arr)
+    }
+
+    pub fn put_string8(&mut self, s: String) -> PutRes {
+        if s.len() > u8::MAX as usize {
+            anyhow::bail!("string too big for u8");
+        }
+        self.put_u8(s.len() as u8)?;
+        self.extend_from_slice(s.as_bytes());
+        Ok(())
+    }
+
+    pub fn get_string8(&mut self) -> GetRes<String> {
+        let len = self.get_u8()?;
+        let mut s = String::new();
+        for _ in 0..len {
+            s.push(self.get_u8()? as char);
+        }
+        Ok(s)
     }
 
     pub fn put_enum<T: MCEncode + MCDecode>(&mut self, enm: Enum<T>) -> PutRes {
