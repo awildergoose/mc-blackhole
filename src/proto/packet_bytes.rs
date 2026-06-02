@@ -9,6 +9,7 @@ use crate::{
     codecs::{
         array::Array,
         base::{MCDecode, MCEncode},
+        enums::Enum,
     },
     proto::{
         game_profile::GameProfile,
@@ -105,6 +106,14 @@ impl PacketBytes {
         }
 
         Ok(arr)
+    }
+
+    pub fn put_enum<T: MCEncode + MCDecode>(&mut self, enm: Enum<T>) -> PutRes {
+        enm.encode(self)
+    }
+
+    pub fn get_enum<T: MCEncode + MCDecode>(&mut self) -> GetRes<Enum<T>> {
+        T::decode(self)
     }
 }
 

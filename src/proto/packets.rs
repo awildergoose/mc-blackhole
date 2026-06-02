@@ -19,6 +19,41 @@ pub trait Packet: MCEncode + MCDecode {
 }
 
 #[macro_export]
+macro_rules! create_enum {
+    ($name:tt, $ftype:ty, $($tname:ty => $tvalue:tt),*) => {
+        paste::paste! {
+            use generics_macro::{get_ident, put_ident};
+            use $crate::{
+                codecs::base::{MCDecode, MCEncode},
+                proto::packet_bytes::PacketBytes,
+            };
+
+            #[derive(Clone, Debug)]
+            pub struct $name(pub $ftype);
+
+            impl $name {
+                $(
+                    pub const [<$tname:snake:upper>]: Self = Self($tvalue);
+                )*
+            }
+
+            impl MCEncode for $name {
+                fn encode(&self, dst: &mut PacketBytes) -> anyhow::Result<()> {
+                    put_ident!(dst, $ftype, self.0.clone());
+                    Ok(())
+                }
+            }
+
+            impl MCDecode for $name {
+                fn decode(src: &mut PacketBytes) -> anyhow::Result<Self> {
+                    Ok(Self(get_ident!(src, $ftype)))
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! create_codec {
     ($name:tt, $($fname:tt => $ftype:ty),*) => {
         use $crate::{

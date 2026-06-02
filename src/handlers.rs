@@ -1,6 +1,5 @@
 use bytes::{BufMut, BytesMut};
 use fastnbt::ByteArray;
-use uuid::Uuid;
 
 use crate::{
     codecs::base::MCDecode,
@@ -21,7 +20,8 @@ use crate::{
                 sc_set_compression::ScSetCompression,
             },
             play::{
-                sc_keep_alive::ScKeepAlive, sc_login::ScLogin, sc_plugin_message::ScPluginMessage,
+                GameEvent, sc_game_event::ScGameEvent, sc_keep_alive::ScKeepAlive,
+                sc_login::ScLogin, sc_plugin_message::ScPluginMessage,
             },
         },
         rawchunktest::CHUNK_TEST,
@@ -40,7 +40,7 @@ pub enum ConnectionState {
 
 #[allow(clippy::too_many_lines)]
 pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
-    let mut state = ConnectionState::Handshaking;
+    let mut state: ConnectionState; // Handshaking
     let intention = expect_packet!(conn, CsIntention)?;
     if intention.intent != 2 {
         anyhow::bail!("not a login intention");
@@ -171,10 +171,11 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             println!("sent login");
 
                             // game event
-                            body = PacketBytes::new();
-                            body.put_u8(13)?;
-                            body.put_f32(0.0)?;
-                            conn.write_packet(0x26, &body).await?;
+                            conn.write_pkt(ScGameEvent::new(
+                                GameEvent::START_WAITING_FOR_CHUNKS,
+                                0.0,
+                            ))
+                            .await?;
 
                             // chunk
                             body = PacketBytes::new();
@@ -202,7 +203,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             body.put_var_int(0)?;
 
                             body.put_f64(0.0)?;
-                            body.put_f64(70.0)?;
+                            body.put_f64(72.0)?;
                             body.put_f64(0.0)?;
 
                             body.put_f64(0.0)?;
@@ -216,11 +217,6 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             conn.write_packet(0x46, &body).await?;
 
                             println!("sent player pos sync");
-
-                            // send tick state
-                            conn.write_packet(0x7D, &[0x41, 0xA0, 0x00, 0x00, 0x00])
-                                .await?;
-                            conn.write_packet(0x7E, &[0x00]).await?;
 
                             // brand
                             conn.write_pkt(ScPluginMessage::new(
@@ -272,9 +268,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             // TODO: send set_default_spawn_position
 
                             // keep alive
-                            body = PacketBytes::new();
-                            body.put_i64(1)?;
-                            conn.write_packet(0x2B, &body).await?;
+                            conn.write_pkt(ScKeepAlive { rand: 1 }).await?;
                         }
                     }
                     _ => unreachable!(),

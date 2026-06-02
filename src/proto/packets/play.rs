@@ -1,6 +1,11 @@
 use fastnbt::ByteArray;
 
-use crate::{codecs::array::Array, proto::varint::VarInt, quickpkt};
+use crate::{
+    codecs::{array::Array, enums::Enum},
+    create_enum,
+    proto::varint::VarInt,
+    quickpkt,
+};
 
 quickpkt!(sc_keep_alive, 0x2B, rand => i64);
 
@@ -38,3 +43,21 @@ quickpkt!(sc_player_position, 0x46,
     yaw => f32, pitch => f32,
     flags => u32
 );
+
+create_enum!(GameEvent, u16,
+    NoRespawnBlockAvailable => 0,
+    BeginRaining => 1,
+    EndRaining => 2,
+    ChangeGamemode => 3,
+    WinGame => 4,
+    DemoEvent => 5,
+    ArrowHitPlayer => 6,
+    RainLevelChange => 7,
+    ThunderLevelChange => 8,
+    PlayPufferfishStingSound => 9,
+    PlayElderGuardianAppearance => 10,
+    EnableRespawnScreen => 11,
+    LimitedCrafting => 12,
+    StartWaitingForChunks => 13
+);
+quickpkt!(sc_game_event, 0x26, event => Enum<GameEvent>, value => f32);
