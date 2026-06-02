@@ -4,12 +4,12 @@ use crate::{
 };
 
 quickpkt!(
-    set_compression,
+    sc_set_compression,
     0x03, threshold => VarInt
 );
-quickpkt!(login_success, 0x02, game_profile => GameProfile);
+quickpkt!(sc_login_success, 0x02, game_profile => GameProfile);
 quickpkt!(
-    login_start,
+    sc_login_start,
     0x00,
     username => String
 );

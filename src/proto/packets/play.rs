@@ -39,10 +39,3 @@ quickpkt!(sc_player_position, 0x46,
     yaw => f32, pitch => f32,
     flags => u32
 );
-
-// pub struct ScoreboardPlayer {
-//     uuid: Uuid,
-//     actions: Array<ScoreboardPlayerAction>
-// }
-
-// quickpkt!(sc_player_info_update, 0x44, bitset => Array<i64>, players => Array<ScoreboardPlayer>);

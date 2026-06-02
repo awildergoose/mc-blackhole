@@ -3,20 +3,23 @@ use fastnbt::ByteArray;
 use uuid::Uuid;
 
 use crate::{
-    codecs::base::{MCDecode, MCEncode},
+    codecs::base::MCDecode,
     net::framing::FramedConn,
     proto::{
         game_profile::GameProfile,
         packet_bytes::PacketBytes,
         packets::{
             Packet,
+            config::{
+                KnownPack, sc_select_known_packs::ScSelectKnownPacks,
+                sc_update_enabled_features::ScUpdateEnabledFeatures,
+            },
             login::{
-                login_start::LoginStart, login_success::LoginSuccess,
-                set_compression::SetCompression,
+                sc_login_start::ScLoginStart, sc_login_success::ScLoginSuccess,
+                sc_set_compression::ScSetCompression,
             },
             play::{
-                cs_move_player_pos_rot::CsMovePlayerPosRot, sc_login::ScLogin,
-                sc_player_position::ScPlayerPosition, sc_plugin_message::ScPluginMessage,
+                sc_keep_alive::ScKeepAlive, sc_login::ScLogin, sc_plugin_message::ScPluginMessage,
             },
         },
         rawchunktest::CHUNK_TEST,
@@ -43,35 +46,29 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
     }
 
     let (id, mut payload) = conn.read_packet().await?;
-    if id != LoginStart::ID {
+    if id != ScLoginStart::ID {
         anyhow::bail!("expected LoginStart");
     }
-    let login = LoginStart::decode(&mut payload)?;
-    println!("LoginStart username={}", login.username);
+    let login = ScLoginStart::decode(&mut payload)?;
 
-    let sc = SetCompression { threshold: 256 };
-    let mut sc_body = PacketBytes::new();
-    sc.encode(&mut sc_body)?;
-    conn.write_packet(SetCompression::ID, &sc_body).await?;
+    let sc = ScSetCompression { threshold: 256 };
+    conn.write_pkt(sc.clone()).await?;
     conn.enable_compression(sc.threshold);
-    println!("Sent SetCompression");
 
-    let ls = LoginSuccess::new(GameProfile {
+    let ls = ScLoginSuccess::new(GameProfile {
         username: login.username,
         uuid: Uuid::new_v4(),
     });
-    let mut body = PacketBytes::new();
-    ls.encode(&mut body)?;
-    conn.write_packet(LoginSuccess::ID, &body).await?;
-    println!("Sent LoginSuccess");
+    conn.write_pkt(ls.clone()).await?;
 
+    // TODO: turn this into an enum
     let mut state = 0; // 0 = configure, 1 = play
     let mut client_tick = 0;
-    let mut pos = (0.0, 0.0, 0.0);
+    let mut body;
 
     loop {
         match conn.read_packet().await {
-            Ok((id, mut data)) => {
+            Ok((id, _data)) => {
                 match state {
                     0 => {
                         if id == 0x00 {
@@ -111,21 +108,20 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             println!("login ack");
 
                             // update enabled features
-                            body = PacketBytes::new();
-                            body.extend_from_slice(&[
-                                0x01, 0x11, 0x6D, 0x69, 0x6E, 0x65, 0x63, 0x72, 0x61, 0x66, 0x74,
-                                0x3A, 0x76, 0x61, 0x6E, 0x69, 0x6C, 0x6C, 0x61,
-                            ]);
-                            conn.write_packet(0x0C, &body).await?;
+                            conn.write_pkt(ScUpdateEnabledFeatures {
+                                features: vec!["minecraft:vanilla".to_owned()],
+                            })
+                            .await?;
 
-                            let known_packs = [
-                                0x01, 0x09, 0x6D, 0x69, 0x6E, 0x65, 0x63, 0x72, 0x61, 0x66, 0x74,
-                                0x04, 0x63, 0x6F, 0x72, 0x65, 0x07, 0x31, 0x2E, 0x32, 0x31, 0x2E,
-                                0x31, 0x30,
-                            ];
-                            body = PacketBytes::new();
-                            body.extend_from_slice(&known_packs);
-                            conn.write_packet(0x0E, &body).await?;
+                            // send known packs
+                            conn.write_pkt(ScSelectKnownPacks {
+                                features: vec![KnownPack::new(
+                                    "minecraft".to_owned(),
+                                    "core".to_owned(),
+                                    "1.21.10".to_owned(),
+                                )],
+                            })
+                            .await?;
                         } else {
                             println!("Post-login received packet id {id:x}");
                         }
@@ -134,9 +130,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                         // client tick end
                         if id == 0x0C {
                             if client_tick % 20 == 0 {
-                                body = PacketBytes::new();
-                                body.put_i64(1)?;
-                                conn.write_packet(0x2B, &body).await?;
+                                conn.write_pkt(ScKeepAlive::new(1)).await?;
                             }
 
                             client_tick += 1;
@@ -150,51 +144,30 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
 
                         println!("Play packet received packet id {id:X}");
 
-                        if id == 0x1E {
-                            let d = CsMovePlayerPosRot::decode(&mut data)?;
-                            pos.0 = d.x;
-                            pos.1 = d.y;
-                            pos.2 = d.z;
-
-                            // conn.write_packet(
-                            //     ScPlayerPosition::ID,
-                            //     &ScPlayerPosition::new(
-                            //         -1, pos.0, pos.1, pos.2, 0.0, 0.0, 0.0, d.yaw, d.pitch,
-                            //         0, // relative positions flags!
-                            //     )
-                            //     .encoded()?,
-                            // )
-                            // .await?;
-                        }
-
                         if id == 0x03 {
                             // we're now in play, lets send Login
-                            conn.write_packet(
-                                ScLogin::ID,
-                                &ScLogin {
-                                    entity_id: 0,
-                                    is_hardcore: false,
-                                    dimensions: vec!["overworld".to_owned()],
-                                    max_players: 1,
-                                    view_distance: 1,
-                                    simulation_distance: 1,
-                                    reduced_debug_info: false,
-                                    respawn_screen: true,
-                                    limited_crafting: false,
-                                    dimension_type: 0,
-                                    dimension: "overworld".to_owned(),
-                                    seed: 0,
-                                    gamemode: 1,
-                                    prev_gamemode: 0xFF,
-                                    is_debug: false,
-                                    is_flat: false,
-                                    has_death_location: false,
-                                    portal_cooldown: 0,
-                                    sea_level: 63,
-                                    secure_chat: false,
-                                }
-                                .encoded()?,
-                            )
+                            conn.write_pkt(ScLogin {
+                                entity_id: 0,
+                                is_hardcore: false,
+                                dimensions: vec!["overworld".to_owned()],
+                                max_players: 1,
+                                view_distance: 1,
+                                simulation_distance: 1,
+                                reduced_debug_info: false,
+                                respawn_screen: true,
+                                limited_crafting: false,
+                                dimension_type: 0,
+                                dimension: "overworld".to_owned(),
+                                seed: 0,
+                                gamemode: 1,
+                                prev_gamemode: 0xFF,
+                                is_debug: false,
+                                is_flat: false,
+                                has_death_location: false,
+                                portal_cooldown: 0,
+                                sea_level: 63,
+                                secure_chat: false,
+                            })
                             .await?;
 
                             println!("sent login");
@@ -252,19 +225,15 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             conn.write_packet(0x7E, &[0x00]).await?;
 
                             // brand
-                            conn.write_packet(
-                                ScPluginMessage::ID,
-                                &ScPluginMessage::new(
-                                    "minecraft:brand".to_owned(),
-                                    ByteArray::new(
-                                        Vec::from(b"\x0Ablack_hole")
-                                            .iter()
-                                            .map(|c| *c as i8)
-                                            .collect(),
-                                    ),
-                                )
-                                .encoded()?,
-                            )
+                            conn.write_pkt(ScPluginMessage::new(
+                                "minecraft:brand".to_owned(),
+                                ByteArray::new(
+                                    Vec::from(b"\x0Ablack_hole")
+                                        .iter()
+                                        .map(|c| *c as i8)
+                                        .collect(),
+                                ),
+                            ))
                             .await?;
 
                             // some BULLLSHIIIIIIIT

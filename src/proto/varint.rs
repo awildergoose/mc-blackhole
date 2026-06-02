@@ -1,10 +1,9 @@
-use anyhow::Result;
 use bytes::{BufMut, BytesMut};
 use tokio::{io::AsyncReadExt, net::TcpStream};
 
 pub type VarInt = i32;
 
-pub async fn read_varint_from_stream(stream: &mut TcpStream) -> Result<i32> {
+pub async fn read_varint_from_stream(stream: &mut TcpStream) -> anyhow::Result<i32> {
     let mut num_read = 0;
     let mut result: i32 = 0;
 
@@ -27,7 +26,7 @@ pub async fn read_varint_from_stream(stream: &mut TcpStream) -> Result<i32> {
     Ok(result)
 }
 
-pub fn read_var_int(src: &mut BytesMut) -> Result<i32> {
+pub fn read_var_int(src: &mut BytesMut) -> anyhow::Result<i32> {
     let mut num_read = 0usize;
     let mut result: i32 = 0;
     let mut consumed = 0usize;

@@ -1,13 +1,12 @@
 use std::io::{Read, Write};
 
-use anyhow::Result;
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
 
-use crate::proto::{packet_bytes::PacketBytes, varint::read_varint_from_stream};
+use crate::proto::{packet_bytes::PacketBytes, packets::Packet, varint::read_varint_from_stream};
 
 pub struct FramedConn {
     stream: TcpStream,
@@ -34,7 +33,7 @@ impl FramedConn {
         self.compression_threshold.is_some()
     }
 
-    pub async fn read_packet(&mut self) -> Result<(i32, PacketBytes)> {
+    pub async fn read_packet(&mut self) -> anyhow::Result<(i32, PacketBytes)> {
         let len = read_varint_from_stream(&mut self.stream).await?;
         let mut buf = vec![0u8; len as usize];
         self.stream.read_exact(&mut buf).await?;
@@ -58,7 +57,14 @@ impl FramedConn {
         Ok((packet_id, bytes))
     }
 
-    pub async fn write_packet(&mut self, packet_id: i32, body: &[u8]) -> Result<()> {
+    pub async fn write_pkt<T>(&mut self, pkt: T) -> anyhow::Result<()>
+    where
+        T: Packet,
+    {
+        self.write_packet(T::ID, &pkt.encoded()?).await
+    }
+
+    pub async fn write_packet(&mut self, packet_id: i32, body: &[u8]) -> anyhow::Result<()> {
         let mut packet_uncompressed = PacketBytes::new();
         packet_uncompressed.put_var_int(packet_id)?;
         packet_uncompressed.extend_from_slice(body);
