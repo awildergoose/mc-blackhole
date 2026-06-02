@@ -44,7 +44,7 @@ quickpkt!(sc_player_position, 0x46,
     flags => u32
 );
 
-create_enum!(GameEvent, u16,
+create_enum!(GameEvent, u8,
     NoRespawnBlockAvailable => 0,
     BeginRaining => 1,
     EndRaining => 2,
