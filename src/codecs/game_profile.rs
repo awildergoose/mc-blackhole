@@ -1,10 +1,14 @@
 use anyhow::bail;
 use uuid::Uuid;
 
-use crate::proto::packet_bytes::PacketBytes;
+use crate::{
+    codecs::base::{MCDecode, MCEncode},
+    proto::packet_bytes::PacketBytes,
+};
 
 const USERNAME_MAX: usize = 16;
 
+// TODO: Migrate this into the codecs system
 #[derive(Debug, Clone)]
 pub struct GameProfile {
     pub uuid: Uuid,
@@ -12,7 +16,14 @@ pub struct GameProfile {
 }
 
 impl GameProfile {
-    pub fn encode(&self, dst: &mut PacketBytes) -> anyhow::Result<()> {
+    #[must_use]
+    pub const fn new(uuid: Uuid, username: String) -> Self {
+        Self { uuid, username }
+    }
+}
+
+impl MCEncode for GameProfile {
+    fn encode(&self, dst: &mut PacketBytes) -> anyhow::Result<()> {
         dst.put_uuid(self.uuid)?;
 
         if self.username.len() > USERNAME_MAX {
@@ -25,8 +36,10 @@ impl GameProfile {
 
         Ok(())
     }
+}
 
-    pub fn decode(src: &mut PacketBytes) -> anyhow::Result<Self> {
+impl MCDecode for GameProfile {
+    fn decode(src: &mut PacketBytes) -> anyhow::Result<Self> {
         let uuid = src.get_uuid()?;
         let username = src.get_string()?;
         // ignore props

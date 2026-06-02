@@ -1,9 +1,6 @@
 use uuid::Uuid;
 
-use crate::{
-    proto::{game_profile::GameProfile, varint::VarInt},
-    quickpkt,
-};
+use crate::{codecs::game_profile::GameProfile, proto::varint::VarInt, quickpkt};
 
 quickpkt!(
     sc_set_compression,

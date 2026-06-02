@@ -3,8 +3,7 @@
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::missing_errors_doc)]
 #![allow(missing_docs)]
-// temporary
-#![allow(clippy::doc_markdown)]
+// I'm sorry to the stable Rust users
 #![allow(incomplete_features)]
 #![feature(lazy_type_alias)]
 

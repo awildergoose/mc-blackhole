@@ -2,11 +2,10 @@ use bytes::{BufMut, BytesMut};
 use fastnbt::ByteArray;
 
 use crate::{
-    codecs::base::MCDecode,
+    codecs::{base::MCDecode, game_profile::GameProfile},
     expect_packet,
     net::framing::FramedConn,
     proto::{
-        game_profile::GameProfile,
         packet_bytes::PacketBytes,
         packets::{
             Packet,
@@ -24,9 +23,7 @@ use crate::{
                 sc_login::ScLogin, sc_plugin_message::ScPluginMessage,
             },
         },
-        rawchunktest::CHUNK_TEST,
-        regs::{self},
-        tags::TAGS,
+        raw::{rawchunktest, regs, tags},
     },
 };
 
@@ -53,10 +50,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
     conn.write_pkt(sc.clone()).await?;
     conn.enable_compression(sc.threshold);
 
-    let ls = ScLoginSuccess::new(GameProfile {
-        username: login.username,
-        uuid: login.uuid,
-    });
+    let ls = ScLoginSuccess::new(GameProfile::new(login.uuid, login.username));
     conn.write_pkt(ls.clone()).await?;
 
     let mut client_tick = 0;
@@ -114,7 +108,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             conn.write_packet(0x07, regs::SECTION19).await?;
                             conn.write_packet(0x07, regs::SECTION20).await?;
 
-                            conn.write_packet(0x0D, TAGS).await?;
+                            conn.write_packet(0x0D, tags::TAGS).await?;
 
                             // finish configuration
                             body = PacketBytes::new();
@@ -149,15 +143,15 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                                 is_hardcore: false,
                                 dimensions: vec!["overworld".to_owned()],
                                 max_players: 1,
-                                view_distance: 1,
-                                simulation_distance: 1,
+                                view_distance: 32,
+                                simulation_distance: 32,
                                 reduced_debug_info: false,
                                 respawn_screen: true,
                                 limited_crafting: false,
                                 dimension_type: 0,
                                 dimension: "overworld".to_owned(),
                                 seed: 0,
-                                gamemode: 1,
+                                gamemode: 3,
                                 prev_gamemode: 0xFF,
                                 is_debug: false,
                                 is_flat: false,
@@ -185,21 +179,21 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             // chunks begin
                             conn.write_packet(0x0C, &[]).await?;
 
-                            let r = 4;
+                            println!("sending chunks");
+                            let r = 32;
                             for x in -r..r {
                                 for z in -r..r {
                                     let mut chkbody = BytesMut::new();
                                     chkbody.put_i32(x);
                                     chkbody.put_i32(z);
-                                    chkbody.extend_from_slice(CHUNK_TEST);
+                                    chkbody.extend_from_slice(rawchunktest::CHUNK_TEST);
                                     conn.write_packet(0x2C, &chkbody).await?;
                                 }
                             }
+                            println!("sent chunks");
 
                             // chunks end
                             conn.write_packet(0x0B, &[0x01]).await?;
-
-                            println!("sent chunk");
 
                             // sync pos
                             body = PacketBytes::new();

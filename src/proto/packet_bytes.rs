@@ -10,12 +10,9 @@ use crate::{
         array::Array,
         base::{MCDecode, MCEncode},
         enums::Enum,
-    },
-    proto::{
         game_profile::GameProfile,
-        utils::{read_string, read_uuid, write_string, write_uuid},
-        varint::{read_var_int, write_var_int},
     },
+    proto::varint::{read_var_int, write_var_int},
 };
 
 #[derive(Debug, Clone)]
@@ -43,23 +40,37 @@ impl PacketBytes {
     }
 
     pub fn put_uuid(&mut self, uuid: Uuid) -> PutRes {
-        write_uuid(&mut self.data, uuid)
+        let u = uuid.as_u128();
+        let msb = (u >> 64) as u64;
+        let lsb = (u & 0xffff_ffff_ffff_ffff) as u64;
+        self.put_u64(msb)?;
+        self.put_u64(lsb)?;
+        Ok(())
     }
 
     pub fn get_uuid(&mut self) -> GetRes<Uuid> {
-        read_uuid(&mut self.data)
+        let msb = self.get_u64()?;
+        let lsb = self.get_u64()?;
+        Ok(Uuid::from_u64_pair(msb, lsb))
     }
 
     pub fn put_string(&mut self, s: String) -> PutRes {
-        write_string(&mut self.data, &s)
+        self.put_var_int(s.len() as i32)?;
+        self.extend_from_slice(s.as_bytes());
+        Ok(())
     }
 
     pub fn get_string(&mut self) -> GetRes<String> {
-        read_string(&mut self.data)
+        let len = self.get_var_int()?;
+        if self.len() < len as usize {
+            anyhow::bail!("String truncated");
+        }
+        let bytes = self.split_to(len as usize);
+        Ok(String::from_utf8(bytes.to_vec())?)
     }
 
     pub fn put_str(&mut self, s: &str) -> PutRes {
-        write_string(&mut self.data, s)
+        self.put_string(s.to_owned())
     }
 
     pub fn get_str(&mut self) -> GetRes<String> {
