@@ -190,6 +190,10 @@ impl PacketBytes {
         }
     }
 
+    pub fn advance(&mut self, cnt: usize) {
+        self.data.advance(cnt);
+    }
+
     #[must_use]
     pub fn freeze(self) -> Bytes {
         self.data.freeze()

@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::{
     codecs::base::MCDecode,
+    expect_packet,
     net::framing::FramedConn,
     proto::{
         game_profile::GameProfile,
@@ -14,8 +15,9 @@ use crate::{
                 KnownPack, sc_select_known_packs::ScSelectKnownPacks,
                 sc_update_enabled_features::ScUpdateEnabledFeatures,
             },
+            handshake::cs_intention::CsIntention,
             login::{
-                sc_login_start::ScLoginStart, sc_login_success::ScLoginSuccess,
+                cs_login_start::CsLoginStart, sc_login_success::ScLoginSuccess,
                 sc_set_compression::ScSetCompression,
             },
             play::{
@@ -28,28 +30,24 @@ use crate::{
     },
 };
 
+pub enum ConnectionState {
+    Handshaking,
+    Status,
+    Login,
+    Configuration,
+    Play,
+}
+
 #[allow(clippy::too_many_lines)]
 pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
-    let (id, mut payload) = conn.read_packet().await?;
-    if id != 0x00 {
-        anyhow::bail!("not a handshake");
+    let mut state = ConnectionState::Handshaking;
+    let intention = expect_packet!(conn, CsIntention)?;
+    if intention.intent != 2 {
+        anyhow::bail!("not a login intention");
     }
-    let _proto = payload.get_var_int()?;
-    let _server_address = payload.get_string()?;
-    if payload.len() < 2 {
-        anyhow::bail!("bad handshake");
-    }
-    let _ = payload.split_to(2);
-    let next_state = payload.get_var_int()?;
-    if next_state != 2 {
-        anyhow::bail!("next_state != 2");
-    }
+    let login = expect_packet!(conn, CsLoginStart)?;
 
-    let (id, mut payload) = conn.read_packet().await?;
-    if id != ScLoginStart::ID {
-        anyhow::bail!("expected LoginStart");
-    }
-    let login = ScLoginStart::decode(&mut payload)?;
+    state = ConnectionState::Login;
 
     let sc = ScSetCompression { threshold: 256 };
     conn.write_pkt(sc.clone()).await?;
@@ -57,12 +55,10 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
 
     let ls = ScLoginSuccess::new(GameProfile {
         username: login.username,
-        uuid: Uuid::new_v4(),
+        uuid: login.uuid,
     });
     conn.write_pkt(ls.clone()).await?;
 
-    // TODO: turn this into an enum
-    let mut state = 0; // 0 = configure, 1 = play
     let mut client_tick = 0;
     let mut body;
 
@@ -70,7 +66,30 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
         match conn.read_packet().await {
             Ok((id, _data)) => {
                 match state {
-                    0 => {
+                    ConnectionState::Login => {
+                        if id == 0x03 {
+                            // update enabled features
+                            conn.write_pkt(ScUpdateEnabledFeatures {
+                                features: vec!["minecraft:vanilla".to_owned()],
+                            })
+                            .await?;
+
+                            // send known packs
+                            conn.write_pkt(ScSelectKnownPacks {
+                                features: vec![KnownPack::new(
+                                    "minecraft".to_owned(),
+                                    "core".to_owned(),
+                                    "1.21.10".to_owned(),
+                                )],
+                            })
+                            .await?;
+
+                            state = ConnectionState::Configuration;
+                        } else {
+                            eprintln!("login received packet id {id:X}");
+                        }
+                    }
+                    ConnectionState::Configuration => {
                         if id == 0x00 {
                             // registries
                             conn.write_packet(0x07, regs::SECTION0).await?;
@@ -100,33 +119,12 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             // finish configuration
                             body = PacketBytes::new();
                             conn.write_packet(0x03, &body).await?;
-                            state = 1;
-                            continue;
-                        }
-                        if id == 0x03 {
-                            // we're in configuration right now, become play
-                            println!("login ack");
-
-                            // update enabled features
-                            conn.write_pkt(ScUpdateEnabledFeatures {
-                                features: vec!["minecraft:vanilla".to_owned()],
-                            })
-                            .await?;
-
-                            // send known packs
-                            conn.write_pkt(ScSelectKnownPacks {
-                                features: vec![KnownPack::new(
-                                    "minecraft".to_owned(),
-                                    "core".to_owned(),
-                                    "1.21.10".to_owned(),
-                                )],
-                            })
-                            .await?;
+                            state = ConnectionState::Play;
                         } else {
-                            println!("Post-login received packet id {id:x}");
+                            eprintln!("configuration received packet id {id:X}");
                         }
                     }
-                    1 => {
+                    ConnectionState::Play => {
                         // client tick end
                         if id == 0x0C {
                             if client_tick % 20 == 0 {
@@ -142,7 +140,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             continue;
                         }
 
-                        println!("Play packet received packet id {id:X}");
+                        println!("play received packet id {id:X}");
 
                         if id == 0x03 {
                             // we're now in play, lets send Login

@@ -4,6 +4,7 @@ use crate::{
 };
 
 pub mod config;
+pub mod handshake;
 pub mod login;
 pub mod play;
 
@@ -26,7 +27,7 @@ macro_rules! create_codec {
         };
         use generics_macro::{put_ident, get_ident};
 
-        #[derive(Clone)]
+        #[derive(Clone, Debug)]
         pub struct $name {
             $(pub $fname: $ftype),*,
         }
@@ -92,4 +93,19 @@ macro_rules! quickpkt {
             }
         }
     };
+}
+
+#[macro_export]
+macro_rules! expect_packet {
+    ($conn:expr, $name:tt) => {{
+        let (id, mut payload) = $conn.read_packet().await?;
+        if id == $name::ID {
+            $name::decode(&mut payload)
+        } else {
+            anyhow::bail!(
+                "Expected packet {} but instead got ID {id}",
+                stringify!($name)
+            );
+        }
+    }};
 }

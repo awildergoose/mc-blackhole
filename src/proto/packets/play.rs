@@ -1,6 +1,5 @@
 use fastnbt::ByteArray;
 
-// use uuid::Uuid;
 use crate::{codecs::array::Array, proto::varint::VarInt, quickpkt};
 
 quickpkt!(sc_keep_alive, 0x2B, rand => i64);
