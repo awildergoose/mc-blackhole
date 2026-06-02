@@ -233,13 +233,6 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             ))
                             .await?;
 
-                            // some BULLLSHIIIIIIIT
-                            conn.write_packet(
-                                0x3E,
-                                &[0x00, 0x3D, 0x4C, 0xCC, 0xCD, 0x3D, 0xCC, 0xCC, 0xCD],
-                            )
-                            .await?;
-
                             // tab list
                             body = PacketBytes::new();
                             // 0x08 (list) | 0x01 (add player)
@@ -254,19 +247,6 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             body.put_bool(true)?; // listed
 
                             conn.write_packet(0x44, &body).await?;
-
-                            // inventory clear BULLSHITT
-                            conn.write_packet(
-                                0x12,
-                                &[
-                                    0x00, 0x01, 0x2E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                ],
-                            )
-                            .await?;
 
                             // TODO: send set_default_spawn_position
 
