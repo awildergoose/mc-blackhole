@@ -29,24 +29,33 @@ macro_rules! create_enum {
             };
 
             #[derive(Clone, Debug)]
-            pub struct $name(pub $ftype);
-
-            impl $name {
+            #[repr($ftype)]
+            pub enum $name {
                 $(
-                    pub const [<$tname:snake:upper>]: Self = Self($tvalue);
+                    $tname = $tvalue,
                 )*
             }
 
             impl MCEncode for $name {
                 fn encode(&self, dst: &mut PacketBytes) -> anyhow::Result<()> {
-                    put_ident!(dst, $ftype, self.0.clone());
+                    put_ident!(dst, $ftype, match self {
+                        $(
+                            Self::$tname => $tvalue,
+                        )*
+                    });
                     Ok(())
                 }
             }
 
             impl MCDecode for $name {
                 fn decode(src: &mut PacketBytes) -> anyhow::Result<Self> {
-                    Ok(Self(get_ident!(src, $ftype)))
+                    let v = get_ident!(src, $ftype);
+                    Ok(match v {
+                        $(
+                            $tvalue => Self::$tname,
+                        )*
+                        _ => anyhow::bail!("invalid value for enum {}, got {v}", stringify!($name)),
+                    })
                 }
             }
         }

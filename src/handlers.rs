@@ -171,19 +171,20 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             println!("sent login");
 
                             // game event
-                            conn.write_pkt(ScGameEvent::new(
-                                GameEvent::START_WAITING_FOR_CHUNKS,
-                                0.0,
-                            ))
-                            .await?;
+                            conn.write_pkt(ScGameEvent::new(GameEvent::StartWaitingForChunks, 0.0))
+                                .await?;
 
                             // chunk
+
+                            // set chunk center
                             body = PacketBytes::new();
                             body.put_var_int(0)?;
                             body.put_var_int(0)?;
                             conn.write_packet(0x5C, &body).await?;
 
+                            // chunks begin
                             conn.write_packet(0x0C, &[]).await?;
+
                             let r = 4;
                             for x in -r..r {
                                 for z in -r..r {
@@ -194,6 +195,8 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                                     conn.write_packet(0x2C, &chkbody).await?;
                                 }
                             }
+
+                            // chunks end
                             conn.write_packet(0x0B, &[0x01]).await?;
 
                             println!("sent chunk");
