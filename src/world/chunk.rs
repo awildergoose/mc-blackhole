@@ -103,6 +103,7 @@ impl Chunk {
 
     #[must_use]
     pub fn get_block(&self, wx: i32, wy: i32, wz: i32) -> u64 {
+        let wx = wx - 2; // ?? idk
         let wy = wy + 64; // world height dependant!
         let sy = (wy / 16) as usize;
         let ly = (wy & 15) as u32;
@@ -113,6 +114,7 @@ impl Chunk {
     }
 
     pub fn set_block(&mut self, wx: i32, wy: i32, wz: i32, value: u64) {
+        let wx = wx - 2; // ?? idk
         let wy = wy + 64; // world height dependant!
         let sy = (wy / 16) as usize;
         let ly = (wy & 15) as u32;

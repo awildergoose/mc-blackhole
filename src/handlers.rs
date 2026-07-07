@@ -142,6 +142,28 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             let z = data.get_f64()?;
                             let _flags = data.get_u8()?;
 
+                            if level.can_send_chunks() {
+                                // chunks begin
+                                conn.write_packet(0x0C, &[]).await?;
+
+                                let r = 3;
+                                for cx in -r..r {
+                                    for cz in -r..r {
+                                        let nx = ((x / 16.0).round() as i32) + cx;
+                                        let nz = ((z / 16.0).round() as i32) + cz;
+
+                                        conn.write_packet(
+                                            0x2C,
+                                            &level.get_chunk(Vector2::new(nx, nz)).encode()?,
+                                        )
+                                        .await?;
+                                    }
+                                }
+
+                                // chunks end
+                                conn.write_packet(0x0B, &[0x01]).await?;
+                            }
+
                             println!("{x} {y} {z}");
                             continue;
                         }
@@ -206,32 +228,13 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             body.put_var_int(0)?;
                             conn.write_packet(0x5C, &body).await?;
 
-                            // chunks begin
-                            conn.write_packet(0x0C, &[]).await?;
-
-                            println!("sending chunks");
-                            let r = 2;
-                            for x in -r..r {
-                                for z in -r..r {
-                                    conn.write_packet(
-                                        0x2C,
-                                        &level.get_chunk(Vector2::new(x, z)).encode()?,
-                                    )
-                                    .await?;
-                                }
-                            }
-                            println!("sent chunks");
-
-                            // chunks end
-                            conn.write_packet(0x0B, &[0x01]).await?;
-
                             // sync pos
                             body = PacketBytes::new();
                             body.put_var_int(0)?;
 
-                            body.put_f64(0.0)?;
+                            body.put_f64(0.5)?;
                             body.put_f64(72.0)?;
-                            body.put_f64(0.0)?;
+                            body.put_f64(0.5)?;
 
                             body.put_f64(0.0)?;
                             body.put_f64(0.0)?;
