@@ -14,3 +14,4 @@ serde_json = "1.0.150"
 tokio = { version = "1.52.3", features = ["full"] }
 uuid = { version = "1.23.2", features = ["v4"] }
 generics_macro = { path = "./generics_macro" }
+cgmath = { version = "0.18.0", features = ["swizzle"], default-features = false }

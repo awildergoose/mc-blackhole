@@ -22,12 +22,6 @@ pub trait Packet: MCEncode + MCDecode {
 macro_rules! create_enum {
     ($name:tt, $ftype:ty, $($tname:ty => $tvalue:tt),*) => {
         paste::paste! {
-            use generics_macro::{get_ident, put_ident};
-            use $crate::{
-                codecs::base::{MCDecode, MCEncode},
-                proto::packet_bytes::PacketBytes,
-            };
-
             #[derive(Clone, Debug)]
             #[repr($ftype)]
             pub enum $name {
@@ -36,9 +30,9 @@ macro_rules! create_enum {
                 )*
             }
 
-            impl MCEncode for $name {
-                fn encode(&self, dst: &mut PacketBytes) -> anyhow::Result<()> {
-                    put_ident!(dst, $ftype, match self {
+            impl $crate::codecs::base::MCEncode for $name {
+                fn encode(&self, dst: &mut $crate::proto::packet_bytes::PacketBytes) -> anyhow::Result<()> {
+                    generics_macro::put_ident!(dst, $ftype, match self {
                         $(
                             Self::$tname => $tvalue,
                         )*
@@ -47,9 +41,47 @@ macro_rules! create_enum {
                 }
             }
 
-            impl MCDecode for $name {
-                fn decode(src: &mut PacketBytes) -> anyhow::Result<Self> {
-                    let v = get_ident!(src, $ftype);
+            impl $crate::codecs::base::MCDecode for $name {
+                fn decode(src: &mut $crate::proto::packet_bytes::PacketBytes) -> anyhow::Result<Self> {
+                    let v = generics_macro::get_ident!(src, $ftype);
+                    Ok(match v {
+                        $(
+                            $tvalue => Self::$tname,
+                        )*
+                        _ => anyhow::bail!("invalid value for enum {}, got {v}", stringify!($name)),
+                    })
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! create_enum_varint {
+    ($name:tt, $($tname:ty => $tvalue:tt),*) => {
+        paste::paste! {
+            #[derive(Clone, Debug)]
+            #[repr(i32)]
+            pub enum $name {
+                $(
+                    $tname = $tvalue,
+                )*
+            }
+
+            impl $crate::codecs::base::MCEncode for $name {
+                fn encode(&self, dst: &mut $crate::proto::packet_bytes::PacketBytes) -> anyhow::Result<()> {
+                    generics_macro::put_ident!(dst, var_int, match self {
+                        $(
+                            Self::$tname => $tvalue,
+                        )*
+                    });
+                    Ok(())
+                }
+            }
+
+            impl $crate::codecs::base::MCDecode for $name {
+                fn decode(src: &mut $crate::proto::packet_bytes::PacketBytes) -> anyhow::Result<Self> {
+                    let v = generics_macro::get_ident!(src, var_int);
                     Ok(match v {
                         $(
                             $tvalue => Self::$tname,
@@ -65,12 +97,6 @@ macro_rules! create_enum {
 #[macro_export]
 macro_rules! create_codec {
     ($name:tt, $($fname:tt => $ftype:ty),*) => {
-        use $crate::{
-            proto::{packet_bytes::PacketBytes},
-            codecs::base::{MCEncode, MCDecode}
-        };
-        use generics_macro::{put_ident, get_ident};
-
         #[derive(Clone, Debug)]
         pub struct $name {
             $(pub $fname: $ftype),*,
@@ -88,20 +114,20 @@ macro_rules! create_codec {
             }
         }
 
-        impl MCEncode for $name {
-            fn encode(&self, dst: &mut PacketBytes) -> anyhow::Result<()> {
+        impl $crate::codecs::base::MCEncode for $name {
+            fn encode(&self, dst: &mut $crate::proto::packet_bytes::PacketBytes) -> anyhow::Result<()> {
                 $(
-                    put_ident!(dst, $ftype, self.$fname.clone());
+                    generics_macro::put_ident!(dst, $ftype, self.$fname.clone());
                 )*
                 Ok(())
             }
         }
 
-        impl MCDecode for $name {
-            fn decode(src: &mut PacketBytes) -> anyhow::Result<Self> {
+        impl $crate::codecs::base::MCDecode for $name {
+            fn decode(src: &mut $crate::proto::packet_bytes::PacketBytes) -> anyhow::Result<Self> {
                 Ok(Self {
                     $(
-                        $fname: get_ident!(src, $ftype),
+                        $fname: generics_macro::get_ident!(src, $ftype),
                     )*
                 })
             }

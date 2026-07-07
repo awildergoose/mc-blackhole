@@ -43,8 +43,7 @@ impl FramedConn {
         if self.compression_threshold.is_some() {
             let data_len = bytes.get_var_int()?;
 
-            if data_len == 0 {
-            } else {
+            if data_len != 0 {
                 let compressed = bytes.split().freeze();
                 let mut decoder = ZlibDecoder::new(&compressed[..]);
                 let mut decompressed = Vec::with_capacity(data_len as usize);

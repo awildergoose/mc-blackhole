@@ -1,7 +1,23 @@
 use bytes::{BufMut, BytesMut};
 use tokio::{io::AsyncReadExt, net::TcpStream};
 
+use crate::codecs::base::{MCDecode, MCEncode};
+
 pub type VarInt = i32;
+
+pub struct EncodedVarInt(pub i32);
+
+impl MCEncode for EncodedVarInt {
+    fn encode(&self, dst: &mut super::packet_bytes::PacketBytes) -> anyhow::Result<()> {
+        dst.put_var_int(self.0)
+    }
+}
+
+impl MCDecode for EncodedVarInt {
+    fn decode(src: &mut super::packet_bytes::PacketBytes) -> anyhow::Result<Self> {
+        src.get_var_int().map(Self)
+    }
+}
 
 pub async fn read_varint_from_stream(stream: &mut TcpStream) -> anyhow::Result<i32> {
     let mut num_read = 0;

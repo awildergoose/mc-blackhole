@@ -1,4 +1,4 @@
-use bytes::{BufMut, BytesMut};
+use cgmath::Vector2;
 
 use crate::{
     codecs::{base::MCDecode, game_profile::GameProfile},
@@ -22,8 +22,9 @@ use crate::{
                 sc_login::ScLogin, sc_plugin_message::ScPluginMessage,
             },
         },
-        raw::{rawchunktest, regs, tags},
+        raw::{regs, tags},
     },
+    world::level::Level,
 };
 
 pub enum ConnectionState {
@@ -54,10 +55,11 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
 
     let mut client_tick = 0;
     let mut body;
+    let mut level = Level::new();
 
     loop {
         match conn.read_packet().await {
-            Ok((id, _data)) => {
+            Ok((id, mut data)) => {
                 match state {
                     ConnectionState::Login => {
                         if id == 0x03 {
@@ -133,6 +135,35 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             continue;
                         }
 
+                        // move player pos
+                        if id == 0x1D {
+                            let x = data.get_f64()?;
+                            let y = data.get_f64()?;
+                            let z = data.get_f64()?;
+                            let _flags = data.get_u8()?;
+
+                            println!("{x} {y} {z}");
+                            continue;
+                        }
+
+                        // move player rot, player input
+                        if id == 0x1F || id == 0x2A {
+                            continue;
+                        }
+
+                        // move player posrot
+                        if id == 0x1E {
+                            let x = data.get_f64()?;
+                            let y = data.get_f64()?;
+                            let z = data.get_f64()?;
+                            let _y_rot = data.get_f32()?;
+                            let _x_rot = data.get_f32()?;
+                            let _flags = data.get_u8()?;
+
+                            println!("{x} {y} {z}");
+                            continue;
+                        }
+
                         println!("play received packet id {id:X}");
 
                         if id == 0x03 {
@@ -145,7 +176,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                                 view_distance: 32,
                                 simulation_distance: 32,
                                 reduced_debug_info: false,
-                                respawn_screen: true,
+                                respawn_screen: false,
                                 limited_crafting: false,
                                 dimension_type: 0,
                                 dimension: "overworld".to_owned(),
@@ -179,14 +210,14 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             conn.write_packet(0x0C, &[]).await?;
 
                             println!("sending chunks");
-                            let r = 32;
+                            let r = 2;
                             for x in -r..r {
                                 for z in -r..r {
-                                    let mut chkbody = BytesMut::new();
-                                    chkbody.put_i32(x);
-                                    chkbody.put_i32(z);
-                                    chkbody.extend_from_slice(rawchunktest::CHUNK_TEST);
-                                    conn.write_packet(0x2C, &chkbody).await?;
+                                    conn.write_packet(
+                                        0x2C,
+                                        &level.get_chunk(Vector2::new(x, z)).encode()?,
+                                    )
+                                    .await?;
                                 }
                             }
                             println!("sent chunks");
