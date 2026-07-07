@@ -7,6 +7,8 @@
 #![allow(incomplete_features)]
 #![deny(clippy::mod_module_files)]
 #![feature(lazy_type_alias)]
+#![feature(sync_nonpoison)]
+#![feature(nonpoison_mutex)]
 
 pub mod codecs;
 pub mod handlers;

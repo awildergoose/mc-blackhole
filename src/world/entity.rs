@@ -1,7 +1,12 @@
+use std::any::Any;
+
+use cgmath::Vector3;
 use uuid::Uuid;
 
 pub trait Entity: Send + Sync {
     fn base(&self) -> &EntityBase;
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 pub struct EntityBase {
@@ -25,7 +30,9 @@ impl Default for EntityBase {
 
 pub struct PlayerEntity {
     base: EntityBase,
+
     username: String,
+    position: Vector3<f64>,
 }
 
 impl PlayerEntity {
@@ -34,12 +41,30 @@ impl PlayerEntity {
         Self {
             base: EntityBase::default(),
             username,
+            position: Vector3::new(0.0, 0.0, 0.0),
         }
+    }
+
+    pub const fn update_position(&mut self, position: Vector3<f64>) {
+        self.position = position;
+    }
+
+    #[must_use]
+    pub const fn get_position(&self) -> Vector3<f64> {
+        self.position
     }
 }
 
 impl Entity for PlayerEntity {
     fn base(&self) -> &EntityBase {
         &self.base
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

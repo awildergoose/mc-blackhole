@@ -1,4 +1,4 @@
-use cgmath::Vector2;
+use cgmath::Vector3;
 
 use crate::{
     codecs::{base::MCDecode, game_profile::GameProfile},
@@ -24,7 +24,7 @@ use crate::{
         },
         raw::{regs, tags},
     },
-    world::level::Level,
+    world::{entity::PlayerEntity, level::Level},
 };
 
 pub enum ConnectionState {
@@ -50,12 +50,13 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
     conn.write_pkt(sc.clone()).await?;
     conn.enable_compression(sc.threshold);
 
-    let ls = ScLoginSuccess::new(GameProfile::new(login.uuid, login.username));
+    let ls = ScLoginSuccess::new(GameProfile::new(login.uuid, login.username.clone()));
     conn.write_pkt(ls.clone()).await?;
 
     let mut client_tick = 0;
     let mut body;
-    let mut level = Level::new();
+    let mut level = Level::new(4);
+    let player = level.add_entity(PlayerEntity::new(login.username));
 
     loop {
         match conn.read_packet().await {
@@ -141,35 +142,10 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             let y = data.get_f64()?;
                             let z = data.get_f64()?;
                             let _flags = data.get_u8()?;
+                            level
+                                .update_player_position(player, conn, Vector3::new(x, y, z))
+                                .await?;
 
-                            if level.can_send_chunks() {
-                                // chunks begin
-                                conn.write_packet(0x0C, &[]).await?;
-
-                                let r = 3;
-                                for cx in -r..r {
-                                    for cz in -r..r {
-                                        let nx = ((x / 16.0).round() as i32) + cx;
-                                        let nz = ((z / 16.0).round() as i32) + cz;
-
-                                        conn.write_packet(
-                                            0x2C,
-                                            &level.get_chunk(Vector2::new(nx, nz)).encode()?,
-                                        )
-                                        .await?;
-                                    }
-                                }
-
-                                // chunks end
-                                conn.write_packet(0x0B, &[0x01]).await?;
-                            }
-
-                            println!("{x} {y} {z}");
-                            continue;
-                        }
-
-                        // move player rot, player input
-                        if id == 0x1F || id == 0x2A {
                             continue;
                         }
 
@@ -182,7 +158,60 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             let _x_rot = data.get_f32()?;
                             let _flags = data.get_u8()?;
 
-                            println!("{x} {y} {z}");
+                            level
+                                .update_player_position(player, conn, Vector3::new(x, y, z))
+                                .await?;
+                            continue;
+                        }
+
+                        // move player rot, player input, player command, chunk batch received
+                        if id == 0x1F || id == 0x2A || id == 0x29 || id == 0xA {
+                            continue;
+                        }
+
+                        // ping request, only gets sent when F3 is open
+                        // practically useless for our use case
+                        if id == 0x25 {
+                            continue;
+                        }
+
+                        // player command
+                        if id == 0x6 {
+                            body = PacketBytes::new();
+
+                            // TODO: use an existing (s)nbt library
+                            // manual SNBT!
+                            body.put_u8(0x0A)?;
+
+                            body.put_u8(0x08)?; // TAG_String
+                            body.put_u16("text".len() as u16)?;
+                            body.extend_from_slice(b"text");
+
+                            body.put_u8(0x00)?; // TAG_End
+
+                            body.put_u8(0x08)?; // TAG_String
+                            body.put_u16("hello world".len() as u16)?;
+                            body.extend_from_slice(b"hello world");
+
+                            body.put_var_int(1)?;
+
+                            // manual SNBT!
+                            body.put_u8(0x0A)?;
+
+                            body.put_u8(0x08)?; // TAG_String
+                            body.put_u16("text".len() as u16)?;
+                            body.extend_from_slice(b"text");
+
+                            body.put_u8(0x00)?; // TAG_End
+
+                            body.put_u8(0x08)?; // TAG_String
+                            body.put_u16("hello world".len() as u16)?;
+                            body.extend_from_slice(b"hello world");
+
+                            body.put_u8(0)?;
+
+                            conn.write_packet(0x21, &body).await?;
+
                             continue;
                         }
 
@@ -195,8 +224,8 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                                 is_hardcore: false,
                                 dimensions: vec!["overworld".to_owned()],
                                 max_players: 1,
-                                view_distance: 32,
-                                simulation_distance: 32,
+                                view_distance: level.view_distance,
+                                simulation_distance: level.view_distance,
                                 reduced_debug_info: false,
                                 respawn_screen: false,
                                 limited_crafting: false,
