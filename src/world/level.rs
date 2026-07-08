@@ -1,12 +1,15 @@
 use std::{collections::HashMap, sync::nonpoison::Mutex};
 
 use cgmath::{Vector2, Vector3};
+use noise::Perlin;
+use rand::{SeedableRng, rngs::StdRng};
 
 use crate::{
     net::framing::FramedConn,
     proto::packet_bytes::PacketBytes,
     world::{
         chunk::Chunk,
+        chunk_gen::ChunkGenerationParams,
         entity::{Entity, PlayerEntity},
     },
 };
@@ -18,16 +21,22 @@ pub struct Level {
     pub entities: Vec<Mutex<Box<dyn Entity>>>,
     pub chunks: HashMap<ChunkPos, Chunk>,
     pub sent_chunks: Vec<ChunkPos>,
+    pub rng: Mutex<StdRng>,
+    pub noise: Mutex<Perlin>,
     pub view_distance: i32,
 }
 
 impl Level {
     #[must_use]
     pub fn new(view_distance: i32) -> Self {
+        let seed = 69420;
+
         Self {
             entities: vec![],
             chunks: HashMap::new(),
             sent_chunks: vec![],
+            rng: Mutex::new(StdRng::seed_from_u64(seed)),
+            noise: Mutex::new(Perlin::new(seed as u32)),
             view_distance,
         }
     }
@@ -60,9 +69,20 @@ impl Level {
     }
 
     pub fn get_chunk(&mut self, pos: ChunkPos) -> &mut Chunk {
-        self.chunks
-            .entry(pos)
-            .or_insert_with(|| Chunk::new(pos.x, pos.y))
+        self.chunks.entry(pos).or_insert_with(|| {
+            self.rng.with_mut(|random| {
+                self.noise.with_mut(|noise| {
+                    let mut params = ChunkGenerationParams {
+                        cx: pos.x,
+                        cz: pos.y,
+                        random,
+                        noise,
+                    };
+
+                    Chunk::new(pos.x, pos.y, &mut params)
+                })
+            })
+        })
     }
 
     pub fn can_send_chunk(&mut self, pos: ChunkPos) -> bool {

@@ -17,3 +17,5 @@ generics_macro = { path = "./generics_macro" }
 cgmath = { version = "0.18.0", features = ["swizzle"], default-features = false }
 strum = { version = "0.28.0", features = ["derive", "strum_macros"] }
 strum_macros = "0.28.0"
+rand = "0.10.1"
+noise = { version = "0.9.0", features = ["std"] }

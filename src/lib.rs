@@ -9,6 +9,7 @@
 #![feature(lazy_type_alias)]
 #![feature(sync_nonpoison)]
 #![feature(nonpoison_mutex)]
+#![feature(lock_value_accessors)]
 
 pub mod codecs;
 pub mod handlers;

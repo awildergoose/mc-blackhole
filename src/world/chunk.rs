@@ -1,6 +1,9 @@
 use crate::{
     proto::{packet_bytes::PacketBytes, varint::EncodedVarInt},
-    world::palette::PaletteBlockKind,
+    world::{
+        chunk_gen::{ChunkGenerationParams, do_chunk_generation},
+        palette::PaletteBlockKind,
+    },
 };
 use strum::IntoEnumIterator;
 
@@ -89,7 +92,7 @@ pub struct Chunk {
 
 impl Chunk {
     #[must_use]
-    pub fn new(x: i32, z: i32) -> Self {
+    pub fn new(x: i32, z: i32, generation_params: &mut ChunkGenerationParams) -> Self {
         let mut sections = Vec::with_capacity(32);
 
         for _ in 0..32 {
@@ -98,13 +101,12 @@ impl Chunk {
 
         let mut this = Self { sections, x, z };
 
-        for i in 0..256 {
-            this.set_block(i, 0, 0, PaletteBlockKind::BEDROCK);
-            this.set_block(0, 0, i, PaletteBlockKind::BEDROCK);
-        }
+        do_chunk_generation(generation_params, |x, y, z, kind| {
+            this.set_block(x, y, z, kind);
+        });
 
         if x == 0 && z == 0 {
-            this.set_block(0, 0, 0, PaletteBlockKind::STONE);
+            this.set_block(0, 0, 0, PaletteBlockKind::Stone);
         }
 
         this
