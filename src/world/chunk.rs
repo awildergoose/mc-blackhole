@@ -1,3 +1,5 @@
+use std::hash::{DefaultHasher, Hasher};
+
 use crate::{
     proto::{packet_bytes::PacketBytes, varint::EncodedVarInt},
     world::{
@@ -82,6 +84,15 @@ impl Section {
         let idx = Self::entry_index(x, y, z);
         self.set_at_index(idx, value);
     }
+}
+
+#[must_use]
+pub fn determine_chunk_seed(world_seed: u64, cx: i32, cz: i32) -> u64 {
+    let mut h = DefaultHasher::new();
+    h.write_u64(world_seed);
+    h.write_i32(cx);
+    h.write_i32(cz);
+    h.finish()
 }
 
 pub struct Chunk {

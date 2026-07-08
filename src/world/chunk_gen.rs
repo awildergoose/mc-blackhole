@@ -10,34 +10,52 @@ pub struct ChunkGenerationParams<'lvl> {
     pub noise: &'lvl mut Perlin,
 }
 
-fn remap<T>(value: T, istart: T, istop: T, ostart: T, ostop: T) -> T
-where
-    T: Copy
-        + std::ops::Add<Output = T>
-        + std::ops::Sub<Output = T>
-        + std::ops::Mul<Output = T>
-        + std::ops::Div<Output = T>,
-{
-    ostart + (ostop - ostart) * ((value - istart) / (istop - istart))
+fn fbm2d(perlin: &Perlin, x: f64, z: f64, octaves: u32) -> f64 {
+    let mut amp = 1.0;
+    let mut freq = 1.0;
+    let mut sum = 0.0;
+    let mut norm = 0.0;
+
+    for _ in 0..octaves {
+        sum += amp * perlin.get([x * freq, z * freq]);
+        norm += amp;
+        amp *= 0.5;
+        freq *= 2.0;
+    }
+
+    sum / norm
 }
 
 pub fn do_chunk_generation<F: FnMut(i32, i32, i32, PaletteBlockKind)>(
     params: &mut ChunkGenerationParams,
     mut place_tile: F,
 ) {
-    // let random = &mut *params.random;
     let noise = &mut *params.noise;
 
-    for x in 0..16 {
-        for z in 0..16 {
-            let y = noise.get([
-                (f64::from(x + (params.cx * 16)) / 3000.0),
-                (f64::from(z + (params.cz * 16)) / 3000.0),
-            ]);
-            let y = remap(y, -1.0, 1.0, 0.0, 150.0);
-            let y = y.round();
-            let y = y as i32;
-            place_tile(x, y, z, PaletteBlockKind::Stone);
+    let world_scale = 0.0007;
+    let base_y = 20.0;
+    let amp_y = 35.0;
+    let octaves = 5;
+
+    for lx in 0..16 {
+        for lz in 0..16 {
+            let wx = f64::from(lx + params.cx * 16);
+            let wz = f64::from(lz + params.cz * 16);
+
+            let n = fbm2d(noise, wx * world_scale, wz * world_scale, octaves);
+            let mut h = base_y + (n * amp_y);
+            h = h.clamp(0.0, 300.0);
+
+            let y = h.round_ties_even() as i32;
+
+            let kind = if y >= 3 {
+                PaletteBlockKind::Stone
+            } else {
+                PaletteBlockKind::Bedrock
+            };
+
+            place_tile(lx, y, lz, kind);
+            place_tile(lx, y - 1, lz, kind);
         }
     }
 }
