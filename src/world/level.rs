@@ -123,9 +123,16 @@ impl Level {
             (position.z / 16.0).floor() as i32,
         );
 
+        // unload far away chunks
         self.sent_chunks.retain(|chunk| {
             let dx = chunk.x - player_chunk.x;
             let dz = chunk.y - player_chunk.y;
+
+            dx.abs() <= radius && dz.abs() <= radius
+        });
+        self.chunks.retain(|pos, _chunk| {
+            let dx = pos.x - player_chunk.x;
+            let dz = pos.y - player_chunk.y;
 
             dx.abs() <= radius && dz.abs() <= radius
         });

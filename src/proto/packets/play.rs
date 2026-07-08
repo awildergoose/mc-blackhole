@@ -32,6 +32,7 @@ quickpkt!(sc_login, 0x30,
     secure_chat => bool
 );
 
+quickpkt!(cs_move_player_pos, 0x1D, x => f64, y => f64, z => f64, flags => u8);
 quickpkt!(cs_move_player_pos_rot, 0x1E, x => f64, y => f64, z => f64, yaw => f32, pitch => f32, flags => u8);
 
 // Technically we can do more than strings here but it's fine for

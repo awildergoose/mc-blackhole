@@ -30,17 +30,14 @@ impl Default for EntityBase {
 
 pub struct PlayerEntity {
     base: EntityBase,
-
-    username: String,
     position: Vector3<f64>,
 }
 
 impl PlayerEntity {
     #[must_use]
-    pub fn new(username: String) -> Self {
+    pub fn new() -> Self {
         Self {
             base: EntityBase::default(),
-            username,
             position: Vector3::new(0.0, 0.0, 0.0),
         }
     }
@@ -52,6 +49,12 @@ impl PlayerEntity {
     #[must_use]
     pub const fn get_position(&self) -> Vector3<f64> {
         self.position
+    }
+}
+
+impl Default for PlayerEntity {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

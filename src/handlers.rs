@@ -19,9 +19,9 @@ use crate::{
             },
             play::{
                 EntityEvent, GameEvent, cs_change_game_mode::CsChangeGameMode,
-                cs_chat_command::CsChatCommand, cs_move_player_pos_rot::CsMovePlayerPosRot,
-                sc_entity_event::ScEntityEvent, sc_game_event::ScGameEvent,
-                sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
+                cs_chat_command::CsChatCommand, cs_move_player_pos::CsMovePlayerPos,
+                cs_move_player_pos_rot::CsMovePlayerPosRot, sc_entity_event::ScEntityEvent,
+                sc_game_event::ScGameEvent, sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
                 sc_player_abilities::ScPlayerAbilities, sc_player_position::ScPlayerPosition,
                 sc_plugin_message::ScPluginMessage, sc_set_center_chunk::ScSetCenterChunk,
             },
@@ -54,13 +54,13 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
     conn.write_pkt(sc.clone()).await?;
     conn.enable_compression(sc.threshold);
 
-    let ls = ScLoginSuccess::new(GameProfile::new(login.uuid, login.username.clone()));
+    let ls = ScLoginSuccess::new(GameProfile::new(login.uuid, login.username));
     conn.write_pkt(ls.clone()).await?;
 
     let mut client_tick = 0;
     let mut body;
     let mut level = Level::new(4);
-    let player = level.add_entity(PlayerEntity::new(login.username));
+    let player = level.add_entity(PlayerEntity::new());
 
     loop {
         match conn.read_packet().await {
@@ -141,15 +141,16 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                         }
 
                         // move player pos
-                        if id == 0x1D {
-                            let x = data.get_f64()?;
-                            let y = data.get_f64()?;
-                            let z = data.get_f64()?;
-                            let _flags = data.get_u8()?;
-                            level
-                                .update_player_position(player, conn, Vector3::new(x, y, z))
-                                .await?;
+                        if id == CsMovePlayerPos::ID {
+                            let pkt = CsMovePlayerPos::decode(&mut data)?;
 
+                            level
+                                .update_player_position(
+                                    player,
+                                    conn,
+                                    Vector3::new(pkt.x, pkt.y, pkt.z),
+                                )
+                                .await?;
                             continue;
                         }
 
@@ -178,7 +179,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             continue;
                         }
 
-                        // player command
+                        // chat command
                         if id == CsChatCommand::ID {
                             let pkt = CsChatCommand::decode(&mut data)?;
                             let command = pkt.command;
