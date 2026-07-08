@@ -1,4 +1,8 @@
-use crate::proto::{packet_bytes::PacketBytes, varint::EncodedVarInt};
+use crate::{
+    proto::{packet_bytes::PacketBytes, varint::EncodedVarInt},
+    world::palette::PaletteBlockKind,
+};
+use strum::IntoEnumIterator;
 
 #[derive(Clone)]
 struct Section {
@@ -93,34 +97,40 @@ impl Chunk {
         }
 
         let mut this = Self { sections, x, z };
+
         for i in 0..256 {
-            this.set_block(i, 0, 0, 1);
-            this.set_block(0, 0, i, 1);
+            this.set_block(i, 0, 0, PaletteBlockKind::BEDROCK);
+            this.set_block(0, 0, i, PaletteBlockKind::BEDROCK);
         }
-        this.set_block(0, 0, 0, 2);
+
+        if x == 0 && z == 0 {
+            this.set_block(0, 0, 0, PaletteBlockKind::STONE);
+        }
+
         this
     }
 
     #[must_use]
-    pub fn get_block(&self, wx: i32, wy: i32, wz: i32) -> u64 {
-        let wx = wx - 2; // ?? idk
-        let wy = wy + 64; // world height dependant!
-        let sy = (wy / 16) as usize;
-        let ly = (wy & 15) as u32;
-        let lx = (wx & 15) as u32;
-        let lz = (wz & 15) as u32;
+    pub fn get_block(&self, cx: i32, cy: i32, cz: i32) -> u64 {
+        let cx = cx - 2; // ?? idk
+        let cy = cy + 64; // world height dependant!
+        let sy = (cy / 16) as usize;
+        let ly = (cy & 15) as u32;
+        let lx = (cx & 15) as u32;
+        let lz = (cz & 15) as u32;
 
         self.sections[sy].get_block(lx, ly, lz)
     }
 
-    pub fn set_block(&mut self, wx: i32, wy: i32, wz: i32, value: u64) {
-        let wx = wx - 2; // ?? idk
-        let wy = wy + 64; // world height dependant!
-        let sy = (wy / 16) as usize;
-        let ly = (wy & 15) as u32;
-        let lx = (wx & 15) as u32;
-        let lz = (wz & 15) as u32;
-        self.sections[sy].set_block(lx, ly, lz, value);
+    pub fn set_block(&mut self, cx: i32, cy: i32, cz: i32, value: PaletteBlockKind) {
+        let cx = cx - 2; // ?? idk
+        let cy = cy + 64; // world height dependant!
+        let sy = (cy / 16) as usize;
+        let ly = (cy & 15) as u32;
+        let lx = (cx & 15) as u32;
+        let lz = (cz & 15) as u32;
+
+        self.sections[sy].set_block(lx, ly, lz, value.as_palette_index());
     }
 
     pub fn encode(&self) -> anyhow::Result<PacketBytes> {
@@ -133,16 +143,15 @@ impl Chunk {
         let mut data_bytes = PacketBytes::new();
 
         for sy in 0..32 {
-            data_bytes.put_u16(4096)?; // block count
+            data_bytes.put_u16(4096)?; // block count, this doesn't matter as long as it's over 0
 
             // block stuff
             let section = &self.sections[sy];
             data_bytes.put_u8(section.bits_per_entry as u8)?;
-            data_bytes.put_array(vec![
-                EncodedVarInt(0),  // air
-                EncodedVarInt(85), // bedrock
-                EncodedVarInt(1),  // stone
-            ])?;
+            let pal = PaletteBlockKind::iter()
+                .map(|k| EncodedVarInt(k.as_minecraft_id() as i32))
+                .collect::<Vec<EncodedVarInt>>();
+            data_bytes.put_array(pal)?;
 
             let mut packed = Vec::with_capacity(section.data.len() * 8);
 

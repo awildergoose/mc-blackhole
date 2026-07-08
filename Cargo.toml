@@ -15,3 +15,5 @@ tokio = { version = "1.52.3", features = ["full"] }
 uuid = { version = "1.23.2", features = ["v4"] }
 generics_macro = { path = "./generics_macro" }
 cgmath = { version = "0.18.0", features = ["swizzle"], default-features = false }
+strum = { version = "0.28.0", features = ["derive", "strum_macros"] }
+strum_macros = "0.28.0"

@@ -5,6 +5,7 @@ use crate::codecs::base::{MCDecode, MCEncode};
 
 pub type VarInt = i32;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EncodedVarInt(pub i32);
 
 impl MCEncode for EncodedVarInt {
