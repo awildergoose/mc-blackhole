@@ -59,7 +59,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
 
     let mut client_tick = 0;
     let mut body;
-    let mut level = Level::new(4);
+    let mut level = Level::new(16);
     let player = level.add_entity(PlayerEntity::new());
 
     loop {

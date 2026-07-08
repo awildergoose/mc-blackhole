@@ -7,6 +7,11 @@ pub enum PaletteBlockKind {
     Bedrock,
     OakLog,
     OakPlanks,
+    Deepslate,
+    Andesite,
+    Diorite,
+    Dirt,
+    Grass,
 }
 
 impl PaletteBlockKind {
@@ -18,6 +23,11 @@ impl PaletteBlockKind {
             Self::Bedrock => 85,
             Self::OakLog => 137,
             Self::OakPlanks => 15,
+            Self::Deepslate => 27722,
+            Self::Andesite => 6,
+            Self::Diorite => 4,
+            Self::Dirt => 10,
+            Self::Grass => 9,
         }
     }
 
@@ -30,6 +40,11 @@ impl PaletteBlockKind {
             Self::Bedrock => 2,
             Self::OakLog => 3,
             Self::OakPlanks => 4,
+            Self::Deepslate => 5,
+            Self::Andesite => 6,
+            Self::Diorite => 7,
+            Self::Dirt => 8,
+            Self::Grass => 9,
         }
     }
 }

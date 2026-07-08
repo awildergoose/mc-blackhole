@@ -1,12 +1,14 @@
-use std::{collections::HashMap, sync::nonpoison::Mutex};
+use dashmap::{DashMap, mapref::one::RefMut};
+use std::sync::nonpoison::Mutex;
 
 use cgmath::{Vector2, Vector3};
 use noise::Perlin;
 use rand::{SeedableRng, rngs::StdRng};
+use tokio::sync::mpsc;
 
 use crate::{
     net::framing::FramedConn,
-    proto::packet_bytes::PacketBytes,
+    proto::packets::play::sc_set_center_chunk::ScSetCenterChunk,
     world::{
         chunk::{Chunk, determine_chunk_seed},
         chunk_gen::ChunkGenerationParams,
@@ -19,7 +21,7 @@ pub type EntityId = usize;
 
 pub struct Level {
     pub entities: Vec<Mutex<Box<dyn Entity>>>,
-    pub chunks: HashMap<ChunkPos, Chunk>,
+    pub chunks: DashMap<ChunkPos, Chunk>,
     pub sent_chunks: Vec<ChunkPos>,
     pub seed: u64,
     pub view_distance: i32,
@@ -32,7 +34,7 @@ impl Level {
 
         Self {
             entities: vec![],
-            chunks: HashMap::new(),
+            chunks: DashMap::new(),
             sent_chunks: vec![],
             seed,
             view_distance,
@@ -66,17 +68,22 @@ impl Level {
         Some(f(self, entity))
     }
 
-    pub fn get_chunk(&mut self, pos: ChunkPos) -> &mut Chunk {
-        self.chunks.entry(pos).or_insert_with(|| {
-            let mut params = ChunkGenerationParams {
-                cx: pos.x,
-                cz: pos.y,
-                random: &mut StdRng::seed_from_u64(determine_chunk_seed(self.seed, pos.x, pos.y)),
-                noise: &mut Perlin::new(self.seed as u32),
-            };
+    fn gen_chunk(pos: ChunkPos, seed: u64) -> Chunk {
+        let mut params = ChunkGenerationParams {
+            cx: pos.x,
+            cz: pos.y,
+            random: &mut StdRng::seed_from_u64(determine_chunk_seed(seed, pos.x, pos.y)),
+            noise: &mut Perlin::new(seed as u32),
+        };
 
-            Chunk::new(pos.x, pos.y, &mut params)
-        })
+        Chunk::new(pos.x, pos.y, &mut params)
+    }
+
+    #[must_use]
+    pub fn get_chunk(&self, pos: ChunkPos) -> RefMut<'_, Vector2<i32>, Chunk> {
+        self.chunks
+            .entry(pos)
+            .or_insert_with(|| Self::gen_chunk(pos, self.seed))
     }
 
     pub fn can_send_chunk(&mut self, pos: ChunkPos) -> bool {
@@ -102,29 +109,53 @@ impl Level {
         let center_x = (position.x / 16.0).floor() as i32;
         let center_z = (position.z / 16.0).floor() as i32;
 
+        let (chunks_tx, mut chunks_rx) = mpsc::unbounded_channel();
+        let mut handles = vec![];
+
         let radius = self.view_distance;
+
         for cx in -radius..=radius {
             for cz in -radius..=radius {
                 let nx = center_x + cx;
                 let nz = center_z + cz;
+                let pos = Vector2::new(nx, nz);
 
-                if self.can_send_chunk(ChunkPos::new(nx, nz)) {
+                if self.can_send_chunk(pos) {
                     if !has_sent_chunks {
-                        // set center
-                        let mut body = PacketBytes::new();
-                        body.put_var_int(center_x)?;
-                        body.put_var_int(center_z)?;
-                        conn.write_packet(0x5C, &body).await?;
+                        conn.write_pkt(ScSetCenterChunk::new(center_x, center_z))
+                            .await?;
 
                         // chunks begin
                         conn.write_packet(0x0C, &[]).await?;
                         has_sent_chunks = true;
                     }
 
-                    conn.write_packet(0x2C, &self.get_chunk(Vector2::new(nx, nz)).encode()?)
-                        .await?;
+                    if let Some(entry) = self.chunks.get(&pos) {
+                        let payload = { entry.value().encode() }?;
+                        drop(entry);
+                        conn.write_packet(0x2C, &payload).await?;
+                    } else {
+                        let chunks_tx = chunks_tx.clone();
+                        let seed = self.seed;
+
+                        handles.push(tokio::spawn(async move {
+                            let chunk = Self::gen_chunk(pos, seed);
+                            let _ = chunks_tx.send((pos, chunk));
+                        }));
+                    }
                 }
             }
+        }
+
+        for handle in handles {
+            handle.await?;
+        }
+
+        chunks_rx.close();
+
+        while let Some((pos, chunk)) = chunks_rx.recv().await {
+            conn.write_packet(0x2C, &chunk.encode()?).await?;
+            self.chunks.insert(pos, chunk);
         }
 
         if has_sent_chunks {
