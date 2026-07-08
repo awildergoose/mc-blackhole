@@ -62,3 +62,18 @@ create_enum!(GameEvent, u8,
     StartWaitingForChunks => 13
 );
 quickpkt!(sc_game_event, 0x26, event => Enum<GameEvent>, value => f32);
+
+create_enum!(EntityEvent, u8,
+    // limited set
+    SetOpPermissionLevel0 => 24,
+    SetOpPermissionLevel1 => 25,
+    SetOpPermissionLevel2 => 26,
+    SetOpPermissionLevel3 => 27,
+    SetOpPermissionLevel4 => 28
+);
+quickpkt!(sc_entity_event, 0x22, entity_id => i32, status => Enum<EntityEvent>);
+
+quickpkt!(sc_player_abilities, 0x3E, flags => u8, flying_speed => f32, fov_modifier => f32);
+quickpkt!(cs_change_game_mode, 0x04, game_mode => VarInt);
+quickpkt!(cs_chat_command, 0x06, command => String);
+quickpkt!(sc_set_center_chunk, 0x5C, x => VarInt, z => VarInt);

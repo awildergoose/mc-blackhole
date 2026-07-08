@@ -18,8 +18,12 @@ use crate::{
                 sc_set_compression::ScSetCompression,
             },
             play::{
-                GameEvent, sc_game_event::ScGameEvent, sc_keep_alive::ScKeepAlive,
-                sc_login::ScLogin, sc_plugin_message::ScPluginMessage,
+                EntityEvent, GameEvent, cs_change_game_mode::CsChangeGameMode,
+                cs_chat_command::CsChatCommand, cs_move_player_pos_rot::CsMovePlayerPosRot,
+                sc_entity_event::ScEntityEvent, sc_game_event::ScGameEvent,
+                sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
+                sc_player_abilities::ScPlayerAbilities, sc_player_position::ScPlayerPosition,
+                sc_plugin_message::ScPluginMessage, sc_set_center_chunk::ScSetCenterChunk,
             },
         },
         raw::{regs, tags},
@@ -150,22 +154,21 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                         }
 
                         // move player posrot
-                        if id == 0x1E {
-                            let x = data.get_f64()?;
-                            let y = data.get_f64()?;
-                            let z = data.get_f64()?;
-                            let _y_rot = data.get_f32()?;
-                            let _x_rot = data.get_f32()?;
-                            let _flags = data.get_u8()?;
+                        if id == CsMovePlayerPosRot::ID {
+                            let pkt = CsMovePlayerPosRot::decode(&mut data)?;
 
                             level
-                                .update_player_position(player, conn, Vector3::new(x, y, z))
+                                .update_player_position(
+                                    player,
+                                    conn,
+                                    Vector3::new(pkt.x, pkt.y, pkt.z),
+                                )
                                 .await?;
                             continue;
                         }
 
-                        // move player rot, player input, player command, chunk batch received
-                        if id == 0x1F || id == 0x2A || id == 0x29 || id == 0xA {
+                        // move player rot, player input, player command, chunk batch received, set carried item
+                        if id == 0x1F || id == 0x2A || id == 0x29 || id == 0xA || id == 0x34 {
                             continue;
                         }
 
@@ -176,42 +179,43 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                         }
 
                         // player command
-                        if id == 0x6 {
+                        if id == CsChatCommand::ID {
+                            let pkt = CsChatCommand::decode(&mut data)?;
+                            let command = pkt.command;
+
+                            if command.starts_with("fs ") {
+                                let speed = command
+                                    .split("fs ")
+                                    .nth(1)
+                                    .ok_or_else(|| anyhow::anyhow!("bad fly speed value"))?;
+                                let fly_speed = speed.parse()?;
+
+                                conn.write_pkt(ScPlayerAbilities::new(0x04, fly_speed, 0.1))
+                                    .await?;
+                                continue;
+                            }
+
+                            // System Chat Message
                             body = PacketBytes::new();
-
-                            // TODO: use an existing (s)nbt library
-                            // manual SNBT!
-                            body.put_u8(0x0A)?;
-
                             body.put_u8(0x08)?; // TAG_String
-                            body.put_u16("text".len() as u16)?;
-                            body.extend_from_slice(b"text");
+                            body.put_u8(0x00)?; // TAG_END?
+                            body.put_str("unknown command!")?; // text
+                            body.put_u8(0x00)?; // overlay
 
-                            body.put_u8(0x00)?; // TAG_End
+                            conn.write_packet(0x77, &body).await?;
+                            continue;
+                        }
 
-                            body.put_u8(0x08)?; // TAG_String
-                            body.put_u16("hello world".len() as u16)?;
-                            body.extend_from_slice(b"hello world");
+                        // change game mode
+                        if id == CsChangeGameMode::ID {
+                            let pkt = CsChangeGameMode::decode(&mut data)?;
 
-                            body.put_var_int(1)?;
-
-                            // manual SNBT!
-                            body.put_u8(0x0A)?;
-
-                            body.put_u8(0x08)?; // TAG_String
-                            body.put_u16("text".len() as u16)?;
-                            body.extend_from_slice(b"text");
-
-                            body.put_u8(0x00)?; // TAG_End
-
-                            body.put_u8(0x08)?; // TAG_String
-                            body.put_u16("hello world".len() as u16)?;
-                            body.extend_from_slice(b"hello world");
-
-                            body.put_u8(0)?;
-
-                            conn.write_packet(0x21, &body).await?;
-
+                            #[allow(clippy::cast_precision_loss)]
+                            conn.write_pkt(ScGameEvent::new(
+                                GameEvent::ChangeGamemode,
+                                pkt.game_mode as f32,
+                            ))
+                            .await?;
                             continue;
                         }
 
@@ -245,37 +249,18 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
 
                             println!("sent login");
 
-                            // game event
+                            conn.write_pkt(ScEntityEvent::new(
+                                0,
+                                EntityEvent::SetOpPermissionLevel4,
+                            ))
+                            .await?;
                             conn.write_pkt(ScGameEvent::new(GameEvent::StartWaitingForChunks, 0.0))
                                 .await?;
-
-                            // chunk
-
-                            // set chunk center
-                            body = PacketBytes::new();
-                            body.put_var_int(0)?;
-                            body.put_var_int(0)?;
-                            conn.write_packet(0x5C, &body).await?;
-
-                            // sync pos
-                            body = PacketBytes::new();
-                            body.put_var_int(0)?;
-
-                            body.put_f64(0.5)?;
-                            body.put_f64(72.0)?;
-                            body.put_f64(0.5)?;
-
-                            body.put_f64(0.0)?;
-                            body.put_f64(0.0)?;
-                            body.put_f64(0.0)?;
-
-                            body.put_f32(0.0)?;
-                            body.put_f32(0.0)?;
-
-                            body.put_u32(0)?;
-                            conn.write_packet(0x46, &body).await?;
-
-                            println!("sent player pos sync");
+                            conn.write_pkt(ScSetCenterChunk::new(0, 0)).await?;
+                            conn.write_pkt(ScPlayerPosition::new(
+                                0, 0.5, 72.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
+                            ))
+                            .await?;
 
                             // brand
                             conn.write_pkt(ScPluginMessage::new(
@@ -298,8 +283,6 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             body.put_bool(true)?; // listed
 
                             conn.write_packet(0x44, &body).await?;
-
-                            // TODO: send set_default_spawn_position
 
                             // keep alive
                             conn.write_pkt(ScKeepAlive { rand: 1 }).await?;
