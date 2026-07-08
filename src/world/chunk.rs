@@ -1,9 +1,13 @@
-use std::hash::{DefaultHasher, Hasher};
+use std::{
+    hash::{DefaultHasher, Hasher},
+    rc::Rc,
+    sync::nonpoison::Mutex,
+};
 
 use crate::{
     proto::{packet_bytes::PacketBytes, varint::EncodedVarInt},
     world::{
-        chunk_gen::{ChunkGenerationParams, do_chunk_generation},
+        chunk_gen::{ChunkGenerationParams, ChunkRequest, ChunkResponse, do_chunk_generation},
         palette::PaletteBlockKind,
     },
 };
@@ -112,9 +116,18 @@ impl Chunk {
 
         let mut this = Self { sections, x, z };
 
-        do_chunk_generation(generation_params, |x, y, z, kind| {
-            this.set_block(x, y, z, kind);
-        });
+        do_chunk_generation(
+            generation_params,
+            Rc::new(Mutex::new(|chunk_request| match chunk_request {
+                ChunkRequest::SetTile { x, y, z, kind } => {
+                    this.set_block(x, y, z, kind);
+                    ChunkResponse::None
+                }
+                ChunkRequest::GetTile { x, y, z } => ChunkResponse::GetTile {
+                    tile: this.get_block(x, y, z),
+                },
+            })),
+        );
 
         if x == 0 && z == 0 {
             this.set_block(0, 0, 0, PaletteBlockKind::Stone);
@@ -124,7 +137,7 @@ impl Chunk {
     }
 
     #[must_use]
-    pub fn get_block(&self, cx: i32, cy: i32, cz: i32) -> u64 {
+    pub fn get_block(&self, cx: i32, cy: i32, cz: i32) -> PaletteBlockKind {
         let cx = cx - 2; // ?? idk
         let cy = cy + 64; // world height dependant!
         let sy = (cy / 16) as usize;
@@ -132,7 +145,7 @@ impl Chunk {
         let lx = (cx & 15) as u32;
         let lz = (cz & 15) as u32;
 
-        self.sections[sy].get_block(lx, ly, lz)
+        PaletteBlockKind::from_palette_index(self.sections[sy].get_block(lx, ly, lz))
     }
 
     pub fn set_block(&mut self, cx: i32, cy: i32, cz: i32, value: PaletteBlockKind) {

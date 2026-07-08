@@ -47,4 +47,21 @@ impl PaletteBlockKind {
             Self::Grass => 9,
         }
     }
+
+    #[must_use]
+    pub fn from_palette_index(index: u64) -> Self {
+        match index {
+            0 => Self::Air,
+            1 => Self::Stone,
+            2 => Self::Bedrock,
+            3 => Self::OakLog,
+            4 => Self::OakPlanks,
+            5 => Self::Deepslate,
+            6 => Self::Andesite,
+            7 => Self::Diorite,
+            8 => Self::Dirt,
+            9 => Self::Grass,
+            _ => unreachable!("bad palette index"),
+        }
+    }
 }

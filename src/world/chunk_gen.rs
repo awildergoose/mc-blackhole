@@ -1,7 +1,9 @@
+use std::{rc::Rc, sync::nonpoison::Mutex};
+
 use crate::world::palette::PaletteBlockKind;
 use cgmath::{InnerSpace, Vector3};
 use noise::{NoiseFn, Perlin, Seedable};
-use rand::rngs::StdRng;
+use rand::{Rng, RngExt, rngs::StdRng};
 
 pub struct ChunkGenerationParams<'lvl> {
     pub cx: i32,
@@ -152,14 +154,47 @@ fn generate_worm<F>(
     }
 }
 
+pub enum ChunkRequest {
+    SetTile {
+        x: i32,
+        y: i32,
+        z: i32,
+        kind: PaletteBlockKind,
+    },
+    GetTile {
+        x: i32,
+        y: i32,
+        z: i32,
+    },
+}
+
+pub enum ChunkResponse {
+    None,
+    GetTile { tile: PaletteBlockKind },
+}
+
 #[allow(clippy::similar_names)]
 #[allow(clippy::cast_precision_loss)]
-pub fn do_chunk_generation<F: FnMut(i32, i32, i32, PaletteBlockKind)>(
+#[allow(clippy::too_many_lines)]
+pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
     params: &mut ChunkGenerationParams,
-    mut place_tile: F,
+    chk_req: Rc<Mutex<F>>,
 ) {
     let noise = &mut *params.noise;
+    let random = &mut *params.random;
+
     let decoration_noise = Perlin::new(noise.seed() + 1000);
+
+    let chk_req2 = chk_req.clone();
+    let get_tile = move |x, y, z| {
+        chk_req2.with_mut(|chk| match chk(ChunkRequest::GetTile { x, y, z }) {
+            ChunkResponse::None => unreachable!(),
+            ChunkResponse::GetTile { tile } => tile,
+        })
+    };
+    let mut place_tile = move |x, y, z, kind| {
+        chk_req.with_mut(|chk| chk(ChunkRequest::SetTile { x, y, z, kind }));
+    };
 
     let world_scale = 0.0007;
     let base_y = 20.0;
@@ -243,6 +278,56 @@ pub fn do_chunk_generation<F: FnMut(i32, i32, i32, PaletteBlockKind)>(
                 params.cz,
                 &mut place_tile,
             );
+        }
+    }
+
+    // Third: Structures
+    let max_structures = 3;
+    let structure_count = random.next_u32() % max_structures;
+
+    for _ in 0..structure_count {
+        // I call this one, digger bot! (or dirt bot)
+        let x = (random.next_u32() % 16) as i32;
+        let z = (random.next_u32() % 16) as i32;
+
+        let top_surface_y = heights[x as usize][z as usize];
+        let mut y = top_surface_y + 1;
+
+        // if we're above the build limit, OR
+        // if the current block is air, then go down more
+        while y > -64 {
+            if get_tile(x, y, z) == PaletteBlockKind::Air {
+                break;
+            }
+
+            y -= 1;
+        }
+
+        let y = y - 1;
+        let mut pos = Vector3::new(x, y, z);
+
+        loop {
+            if random.random_bool(0.3) {
+                break;
+            }
+
+            place_tile(pos.x, pos.y, pos.z, PaletteBlockKind::Dirt);
+
+            let directions = [
+                Vector3::new(1, 0, 0),
+                Vector3::new(0, 1, 0),
+                Vector3::new(0, 0, 1),
+            ];
+            let mut dir = directions[random.next_u32() as usize % directions.len()];
+            if random.random_bool(0.5) {
+                dir = -dir;
+            }
+
+            pos += dir;
+
+            pos.x = pos.x.clamp(0, 16);
+            pos.y = pos.y.clamp(-64, 300);
+            pos.z = pos.z.clamp(0, 16);
         }
     }
 }
