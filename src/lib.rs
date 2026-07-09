@@ -3,13 +3,14 @@
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::missing_errors_doc)]
 #![allow(missing_docs)]
+#![deny(clippy::mod_module_files)]
 // I'm sorry to the stable Rust users
 #![allow(incomplete_features)]
-#![deny(clippy::mod_module_files)]
 #![feature(lazy_type_alias)]
 #![feature(sync_nonpoison)]
 #![feature(nonpoison_mutex)]
 #![feature(lock_value_accessors)]
+#![feature(optimize_attribute)]
 
 pub mod codecs;
 pub mod handlers;

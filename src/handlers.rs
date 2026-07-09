@@ -206,7 +206,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                                 let speed = command
                                     .split("fs ")
                                     .nth(1)
-                                    .ok_or_else(|| anyhow::anyhow!("bad fly speed value"))?;
+                                    .ok_or_else(|| anyhow::anyhow!("this should never happen"))?;
                                 let fly_speed = speed.parse()?;
 
                                 conn.write_pkt(ScPlayerAbilities::new(0x04, fly_speed, 0.1))
@@ -217,6 +217,41 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             if command == "surface" {
                                 conn.write_pkt(ScPlayerPosition::new(
                                     0, 0.5, 72.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
+                                ))
+                                .await?;
+                                continue;
+                            }
+
+                            if command.starts_with("tp ") {
+                                let x = command
+                                    .split("tp ")
+                                    .nth(1)
+                                    .ok_or_else(|| anyhow::anyhow!("this should never happen"))?
+                                    .split(' ')
+                                    .next()
+                                    .ok_or_else(|| anyhow::anyhow!("bad x value"))?
+                                    .trim();
+                                let x = x.parse()?;
+                                let y = command
+                                    .split("tp ")
+                                    .nth(1)
+                                    .ok_or_else(|| anyhow::anyhow!("this should never happen"))?
+                                    .split(' ')
+                                    .nth(1)
+                                    .ok_or_else(|| anyhow::anyhow!("bad y value"))?
+                                    .trim();
+                                let y = y.parse()?;
+                                let z = command
+                                    .split("tp ")
+                                    .nth(1)
+                                    .ok_or_else(|| anyhow::anyhow!("this should never happen"))?
+                                    .split(' ')
+                                    .nth(2)
+                                    .ok_or_else(|| anyhow::anyhow!("bad z value"))?
+                                    .trim();
+                                let z = z.parse()?;
+                                conn.write_pkt(ScPlayerPosition::new(
+                                    0, x, y, z, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
                                 ))
                                 .await?;
                                 continue;

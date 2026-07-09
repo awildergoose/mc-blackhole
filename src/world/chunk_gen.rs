@@ -12,6 +12,7 @@ pub struct ChunkGenerationParams<'lvl> {
     pub noise: &'lvl mut Perlin,
 }
 
+#[optimize(speed)]
 fn fbm2d(perlin: &Perlin, x: f64, z: f64, octaves: u32) -> f64 {
     let mut amp = 1.0;
     let mut freq = 1.0;
@@ -28,22 +29,7 @@ fn fbm2d(perlin: &Perlin, x: f64, z: f64, octaves: u32) -> f64 {
     sum / norm
 }
 
-fn fbm3d(perlin: &Perlin, x: f64, y: f64, z: f64, octaves: u32) -> f64 {
-    let mut amp = 1.0;
-    let mut freq = 1.0;
-    let mut sum = 0.0;
-    let mut norm = 0.0;
-
-    for _ in 0..octaves {
-        sum += amp * perlin.get([x * freq, y * freq, z * freq]);
-        norm += amp;
-        amp *= 0.5;
-        freq *= 2.0;
-    }
-
-    sum / norm
-}
-
+#[optimize(speed)]
 fn carve_sphere<F>(cx: i32, cy: i32, cz: i32, radius: i32, mut place: F)
 where
     F: FnMut(i32, i32, i32),
@@ -87,6 +73,7 @@ pub enum ChunkResponse {
 #[allow(clippy::similar_names)]
 #[allow(clippy::cast_precision_loss)]
 #[allow(clippy::too_many_lines)]
+#[optimize(speed)]
 pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
     params: &mut ChunkGenerationParams,
     chk_req: Rc<Mutex<F>>,
@@ -131,13 +118,17 @@ pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
             let y = h.round_ties_even() as i32;
             heights[lx as usize][lz as usize] = y;
 
-            let decoration = decoration_noise.get([px, pz]);
+            let decoration = fbm2d(&decoration_noise, px, pz, 2);
 
             for ly in -64..y {
                 let kind = if ly >= -60 {
                     if ly >= 15 {
-                        if decoration >= 0.4 {
-                            PaletteBlockKind::Diorite
+                        if decoration >= 0.75 {
+                            if decoration >= 0.85 {
+                                PaletteBlockKind::Andesite
+                            } else {
+                                PaletteBlockKind::Diorite
+                            }
                         } else {
                             PaletteBlockKind::Stone
                         }
@@ -156,34 +147,27 @@ pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
     // Second: Caves
     let cave_noise = Perlin::new(noise.seed() + 2000);
     let cave_scale = 0.05;
-    let cave_y = 11;
     let cave_amp_y = 5000.0;
     let cave_octaves = 1;
 
     for lx in 0..16 {
-        for ly in 0..16 {
-            for lz in 0..16 {
-                let wx = f64::from(lx + params.cx * 16);
-                let wy = f64::from(ly + cave_y * 16);
-                let wz = f64::from(lz + params.cz * 16);
+        for lz in 0..16 {
+            let wx = f64::from(lx + params.cx * 16);
+            let wz = f64::from(lz + params.cz * 16);
 
-                let px = wx * cave_scale;
-                let py = wy * cave_scale;
-                let pz = wz * cave_scale;
+            let px = wx * cave_scale;
+            let pz = wz * cave_scale;
 
-                let n = fbm3d(&cave_noise, px, py, pz, cave_octaves);
-                let v = n * cave_amp_y;
+            let n = fbm2d(&cave_noise, px, pz, cave_octaves);
+            let v = n * cave_amp_y;
 
-                if v.abs() >= 1500.0 {
-                    let mut h = /*cave_y + */v;
-                    h = h.clamp(0.0, 300.0);
+            if v.abs() >= 1500.0 {
+                let h = v.clamp(0.0, 300.0);
+                let y = h.round_ties_even() as i32;
 
-                    let y = h.round_ties_even() as i32;
-
-                    carve_sphere(lx, y, lz, 3, |x, y, z| {
-                        place_tile(x, y, z, PaletteBlockKind::Air);
-                    });
-                }
+                carve_sphere(lx, y, lz, 3, |x, y, z| {
+                    place_tile(x, y, z, PaletteBlockKind::Air);
+                });
             }
         }
     }
