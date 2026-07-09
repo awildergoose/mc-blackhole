@@ -7,7 +7,7 @@ edition = "2024"
 anyhow = "1.0.102"
 bytes = "1.11.1"
 fastnbt = "2.6.1"
-flate2 = "1.1.9"
+flate2 = { version = "1.1.9", features = ["zlib-rs"], default-features = false }
 paste = "1.0.15"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
