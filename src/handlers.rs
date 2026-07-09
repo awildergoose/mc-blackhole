@@ -214,6 +214,14 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                                 continue;
                             }
 
+                            if command == "surface" {
+                                conn.write_pkt(ScPlayerPosition::new(
+                                    0, 0.5, 72.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
+                                ))
+                                .await?;
+                                continue;
+                            }
+
                             // System Chat Message
                             body = PacketBytes::new();
                             body.put_u8(0x08)?; // TAG_String
@@ -265,8 +273,6 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                                 secure_chat: false,
                             })
                             .await?;
-
-                            println!("sent login");
 
                             conn.write_pkt(ScEntityEvent::new(
                                 0,

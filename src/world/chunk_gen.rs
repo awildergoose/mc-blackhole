@@ -1,7 +1,7 @@
 use std::{rc::Rc, sync::nonpoison::Mutex};
 
 use crate::world::palette::PaletteBlockKind;
-use cgmath::{InnerSpace, Vector3};
+use cgmath::Vector3;
 use noise::{NoiseFn, Perlin, Seedable};
 use rand::{Rng, RngExt, rngs::StdRng};
 
@@ -28,26 +28,20 @@ fn fbm2d(perlin: &Perlin, x: f64, z: f64, octaves: u32) -> f64 {
     sum / norm
 }
 
-fn flow_direction(noise: &Perlin, pos: Vector3<f32>) -> Vector3<f32> {
-    let s = 0.015;
-    let yaw = noise.get([
-        f64::from(pos.x) * s,
-        f64::from(pos.y) * s,
-        f64::from(pos.z) * s,
-    ]) * std::f64::consts::PI;
+fn fbm3d(perlin: &Perlin, x: f64, y: f64, z: f64, octaves: u32) -> f64 {
+    let mut amp = 1.0;
+    let mut freq = 1.0;
+    let mut sum = 0.0;
+    let mut norm = 0.0;
 
-    let pitch = noise.get([
-        f64::from(pos.x).mul_add(s, 500.0),
-        f64::from(pos.y).mul_add(s, 500.0),
-        f64::from(pos.z).mul_add(s, 500.0),
-    ]) * 0.5;
+    for _ in 0..octaves {
+        sum += amp * perlin.get([x * freq, y * freq, z * freq]);
+        norm += amp;
+        amp *= 0.5;
+        freq *= 2.0;
+    }
 
-    Vector3::new(
-        (yaw.cos() * pitch.cos()) as f32,
-        pitch.sin() as f32,
-        (yaw.sin() * pitch.cos()) as f32,
-    )
-    .normalize()
+    sum / norm
 }
 
 fn carve_sphere<F>(cx: i32, cy: i32, cz: i32, radius: i32, mut place: F)
@@ -67,89 +61,6 @@ where
                     place(x, y, z);
                 }
             }
-        }
-    }
-}
-
-#[allow(clippy::similar_names)]
-const fn inside_chunk(wx: i32, wz: i32, cx: i32, cz: i32) -> bool {
-    let minx = cx * 16;
-    let minz = cz * 16;
-
-    wx >= minx && wx < minx + 16 && wz >= minz && wz < minz + 16
-}
-
-const fn local(wx: i32, wz: i32, cx: i32, cz: i32) -> (i32, i32) {
-    (wx - cx * 16, wz - cz * 16)
-}
-
-fn generate_worm<F>(
-    noise: &Perlin,
-    mut pos: Vector3<f32>,
-    length: usize,
-    mut radius: f32,
-    chunk_x: i32,
-    chunk_z: i32,
-    mut place_tile: F,
-) where
-    F: FnMut(i32, i32, i32, PaletteBlockKind),
-{
-    for step in 0..length {
-        let wx = pos.x.round() as i32;
-        let wy = pos.y.round() as i32;
-        let wz = pos.z.round() as i32;
-
-        // carve the tunnel
-        carve_sphere(wx, wy, wz, radius.round() as i32, |x, y, z| {
-            if inside_chunk(x, z, chunk_x, chunk_z) {
-                let (lx, lz) = local(x, z, chunk_x, chunk_z);
-
-                if y >= 0 {
-                    place_tile(lx, y, lz, PaletteBlockKind::Air);
-                }
-            }
-        });
-
-        // occasionally make larger rooms
-        if step % 40 == 0 && step != 0 {
-            carve_sphere(wx, wy, wz, (radius * 2.5) as i32, |x, y, z| {
-                if inside_chunk(x, z, chunk_x, chunk_z) {
-                    let (lx, lz) = local(x, z, chunk_x, chunk_z);
-
-                    if y >= 0 {
-                        place_tile(lx, y, lz, PaletteBlockKind::Air);
-                    }
-                }
-            });
-        }
-
-        let mut dir = flow_direction(noise, pos);
-
-        // keep caves from going straight up
-        if dir.y > 0.3 {
-            dir.y = 0.3;
-            dir = dir.normalize();
-        }
-
-        pos += dir * 2.0;
-
-        radius = (noise.get([
-            f64::from(pos.x) * 0.05,
-            f64::from(pos.y) * 0.05,
-            f64::from(pos.z) * 0.05,
-        ]) as f32)
-            .mul_add(0.15, radius);
-
-        radius = radius.clamp(3.0, 8.0);
-
-        // if we're close to the top, go down
-        if pos.y > 180.0 {
-            pos.y -= 10.0;
-        }
-
-        // if we're close to bedrock, go up
-        if pos.y < 5.0 {
-            pos.y += 10.0;
         }
     }
 }
@@ -193,7 +104,7 @@ pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
             ChunkResponse::GetTile { tile } => tile,
         })
     };
-    let mut place_tile = move |x, y, z, kind| {
+    let place_tile = move |x, y, z, kind| {
         chk_req.with_mut(|chk| chk(ChunkRequest::SetTile { x, y, z, kind }));
     };
 
@@ -220,65 +131,60 @@ pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
             let y = h.round_ties_even() as i32;
             heights[lx as usize][lz as usize] = y;
 
-            let kind = if y >= 3 {
-                if y >= 20 {
-                    if decoration_noise.get([px, pz]) >= 0.6 {
-                        PaletteBlockKind::Diorite
-                    } else {
-                        PaletteBlockKind::Stone
-                    }
-                } else {
-                    PaletteBlockKind::Deepslate
-                }
-            } else {
-                PaletteBlockKind::Bedrock
-            };
+            let decoration = decoration_noise.get([px, pz]);
 
             for ly in -64..y {
+                let kind = if ly >= -60 {
+                    if ly >= 15 {
+                        if decoration >= 0.4 {
+                            PaletteBlockKind::Diorite
+                        } else {
+                            PaletteBlockKind::Stone
+                        }
+                    } else {
+                        PaletteBlockKind::Deepslate
+                    }
+                } else {
+                    PaletteBlockKind::Bedrock
+                };
+
                 place_tile(lx, ly, lz, kind);
             }
         }
     }
 
-    // Second: Carvers
+    // Second: Caves
     let cave_noise = Perlin::new(noise.seed() + 2000);
+    let cave_scale = 0.05;
+    let cave_y = 11;
+    let cave_amp_y = 5000.0;
+    let cave_octaves = 1;
 
-    let world_cx = params.cx * 16;
-    let world_cz = params.cz * 16;
+    for lx in 0..16 {
+        for ly in 0..16 {
+            for lz in 0..16 {
+                let wx = f64::from(lx + params.cx * 16);
+                let wy = f64::from(ly + cave_y * 16);
+                let wz = f64::from(lz + params.cz * 16);
 
-    let cell_size = 64;
+                let px = wx * cave_scale;
+                let py = wy * cave_scale;
+                let pz = wz * cave_scale;
 
-    let cell_x = world_cx.div_euclid(cell_size);
-    let cell_z = world_cz.div_euclid(cell_size);
+                let n = fbm3d(&cave_noise, px, py, pz, cave_octaves);
+                let v = n * cave_amp_y;
 
-    for gx in cell_x - 1..=cell_x + 1 {
-        for gz in cell_z - 1..=cell_z + 1 {
-            let wx = gx * cell_size + cell_size / 2;
-            let wz = gz * cell_size + cell_size / 2;
+                if v.abs() >= 1500.0 {
+                    let mut h = /*cave_y + */v;
+                    h = h.clamp(0.0, 300.0);
 
-            let chance = cave_noise.get([f64::from(gx) * 0.5, f64::from(gz) * 0.5]);
+                    let y = h.round_ties_even() as i32;
 
-            if chance < -0.15 {
-                continue;
+                    carve_sphere(lx, y, lz, 3, |x, y, z| {
+                        place_tile(x, y, z, PaletteBlockKind::Air);
+                    });
+                }
             }
-
-            let start_x =
-                (cave_noise.get([f64::from(gx), f64::from(gz)]) as f32).mul_add(20.0, wx as f32);
-            let start_y = ((cave_noise.get([f64::from(gx) * 0.2, f64::from(gz) * 0.2]) + 1.0)
-                as f32)
-                .mul_add(30.0, 30.0);
-            let start_z = (cave_noise.get([f64::from(gx) + 100.0, f64::from(gz) + 100.0]) as f32)
-                .mul_add(20.0, wz as f32);
-
-            generate_worm(
-                &cave_noise,
-                Vector3::new(start_x, start_y, start_z),
-                220,
-                5.0,
-                params.cx,
-                params.cz,
-                &mut place_tile,
-            );
         }
     }
 
@@ -297,7 +203,8 @@ pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
         // if we're above the build limit, OR
         // if the current block is air, then go down more
         while y > -64 {
-            if get_tile(x, y, z) == PaletteBlockKind::Air {
+            if get_tile(x, y, z) != PaletteBlockKind::Air {
+                y += 1;
                 break;
             }
 
