@@ -1,11 +1,7 @@
 use crate::{
-    codecs::{
-        array::{Array, RemainingArray},
-        enums::Enum,
-        string8::String8,
-    },
+    codecs::{array::Array, enums::Enum, string8::String8},
     create_enum,
-    proto::varint::VarInt,
+    proto::{packet_bytes::PacketBytes, varint::VarInt},
     quickpkt,
 };
 
@@ -82,6 +78,9 @@ quickpkt!(sc_player_abilities, 0x3E, flags => u8, flying_speed => f32, fov_modif
 quickpkt!(cs_change_game_mode, 0x04, game_mode => VarInt);
 quickpkt!(cs_chat_command, 0x06, command => String);
 quickpkt!(sc_set_center_chunk, 0x5C, x => VarInt, z => VarInt);
-quickpkt!(sc_level_chunk_with_light, 0x2C, data => RemainingArray<u8>);
 quickpkt!(sc_chunk_batch_start, 0x0C);
 quickpkt!(sc_chunk_batch_finished, 0x0B, batch_size => VarInt);
+
+// NOTE: The actual packet structure is manually constructed in Chunk::encode!
+// We don't use RemainingArray here because it would be incredibly slow.
+quickpkt!(sc_level_chunk_with_light, 0x2C, bytes => PacketBytes);

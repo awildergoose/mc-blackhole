@@ -51,7 +51,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
 
     state = ConnectionState::Login;
 
-    let sc = ScSetCompression { threshold: 256 };
+    let sc = ScSetCompression::new(256);
     conn.write_pkt(sc.clone()).await?;
     conn.enable_compression(sc.threshold);
 
@@ -318,7 +318,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                                 .await?;
                             conn.write_pkt(ScSetCenterChunk::new(0, 0)).await?;
                             conn.write_pkt(ScPlayerPosition::new(
-                                0, 0.5, 72.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
+                                0, 0.5, 95.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
                             ))
                             .await?;
 

@@ -135,18 +135,24 @@ impl Level {
                         has_sent_chunks = true;
                     }
 
+                    let chunks_tx_2 = chunks_tx.clone();
+
                     if let Some(entry) = self.chunks.get(&pos) {
-                        let payload = { entry.value().encode() }?;
-                        drop(entry);
-                        conn.write_pkt(ScLevelChunkWithLight::new(payload.to_vec()))
-                            .await?;
+                        // Yikes
+                        let chunk = entry.value().clone();
+
+                        handles.push(tokio::spawn(async move {
+                            let _ = chunks_tx_2.send((pos, chunk, false));
+                            Ok::<(), anyhow::Error>(())
+                        }));
                     } else {
                         let chunks_tx = chunks_tx.clone();
                         let seed = self.seed;
 
                         handles.push(tokio::spawn(async move {
                             let chunk = Self::gen_chunk(pos, seed);
-                            let _ = chunks_tx.send((pos, chunk));
+                            let _ = chunks_tx.send((pos, chunk, true));
+                            Ok::<(), anyhow::Error>(())
                         }));
                     }
 
@@ -156,15 +162,19 @@ impl Level {
         }
 
         for handle in handles {
-            handle.await?;
+            handle.await??;
         }
 
         chunks_rx.close();
 
-        while let Some((pos, chunk)) = chunks_rx.recv().await {
-            conn.write_pkt(ScLevelChunkWithLight::new(chunk.encode()?.to_vec()))
+        // TODO: multi-thread encode
+        while let Some((pos, chunk, insert)) = chunks_rx.recv().await {
+            conn.write_pkt(ScLevelChunkWithLight::new(chunk.encode()?))
                 .await?;
-            self.chunks.insert(pos, chunk);
+
+            if insert {
+                self.chunks.insert(pos, chunk);
+            }
         }
 
         if has_sent_chunks {

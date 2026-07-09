@@ -99,6 +99,7 @@ pub fn determine_chunk_seed(world_seed: u64, cx: i32, cz: i32) -> u64 {
     h.finish()
 }
 
+#[derive(Clone)]
 pub struct Chunk {
     sections: Vec<Section>,
     x: i32,
@@ -192,7 +193,8 @@ impl Chunk {
             data_bytes.put_var_int(40)?;
         }
 
-        chkbody.put_array(data_bytes.to_vec())?;
+        chkbody.put_var_int(data_bytes.len() as i32)?;
+        chkbody.put_packet_bytes(data_bytes)?;
         chkbody.put_var_int(0)?; // no block entities
 
         // light data
@@ -204,12 +206,10 @@ impl Chunk {
 
         // sky light
         chkbody.put_var_int(26)?;
+        let light = [0xFF; 2048];
         for _ in 0..26 {
             chkbody.put_var_int(2048)?;
-
-            for _ in 0..2048 {
-                chkbody.put_u8(0xFF)?;
-            }
+            chkbody.extend_from_slice(&light);
         }
         chkbody.put_var_int(0)?; // block light
 

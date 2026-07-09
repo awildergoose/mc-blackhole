@@ -172,7 +172,7 @@ pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
         }
     }
 
-    // Third: Structures
+    // Third: Digger Structures
     let max_structures = 3;
     let structure_count = random.next_u32() % max_structures;
 

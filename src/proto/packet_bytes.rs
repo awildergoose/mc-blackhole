@@ -84,6 +84,15 @@ impl PacketBytes {
         GameProfile::decode(self)
     }
 
+    pub fn put_packet_bytes(&mut self, bytes: Self) -> PutRes {
+        self.extend_from_slice(&bytes);
+        Ok(())
+    }
+
+    pub fn get_packet_bytes(&mut self) -> GetRes<Self> {
+        unimplemented!();
+    }
+
     pub fn put_array<T: MCEncode + MCDecode>(&mut self, arr: Array<T>) -> PutRes {
         self.put_var_int(arr.len() as i32)?;
         for ele in arr {
