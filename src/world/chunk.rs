@@ -1,15 +1,8 @@
-use std::{
-    hash::{DefaultHasher, Hasher},
-    rc::Rc,
-    sync::nonpoison::Mutex,
-};
+use std::hash::{DefaultHasher, Hasher};
 
 use crate::{
     proto::{packet_bytes::PacketBytes, varint::EncodedVarInt},
-    world::{
-        chunk_gen::{ChunkGenerationParams, ChunkRequest, ChunkResponse, do_chunk_generation},
-        palette::PaletteBlockKind,
-    },
+    world::palette::PaletteBlockKind,
 };
 use strum::IntoEnumIterator;
 
@@ -108,56 +101,66 @@ pub struct Chunk {
 
 impl Chunk {
     #[must_use]
-    pub fn new(x: i32, z: i32, generation_params: &mut ChunkGenerationParams) -> Self {
+    pub fn new(x: i32, z: i32) -> Self {
         let mut sections = Vec::with_capacity(32);
 
         for _ in 0..32 {
             sections.push(Section::new(4, 4096));
         }
 
-        let mut this = Self { sections, x, z };
+        Self { sections, x, z }
+    }
 
-        do_chunk_generation(
-            generation_params,
-            Rc::new(Mutex::new(|chunk_request| match chunk_request {
-                ChunkRequest::SetTile { x, y, z, kind } => {
-                    this.set_block(x, y, z, kind);
-                    ChunkResponse::None
-                }
-                ChunkRequest::GetTile { x, y, z } => ChunkResponse::GetTile {
-                    tile: this.get_block(x, y, z),
-                },
-            })),
-        );
+    const fn get_height_difference() -> i32 {
+        64
+    }
 
-        if x == 0 && z == 0 {
-            this.set_block(0, 0, 0, PaletteBlockKind::Stone);
-        }
+    pub fn set_block_local(&mut self, lx: u32, y: i32, lz: u32, value: PaletteBlockKind) {
+        debug_assert!((0..=16).contains(&lx));
+        debug_assert!((0..=16).contains(&lz));
+        debug_assert!((-64..=319).contains(&y));
 
-        this
+        let cy = y + Self::get_height_difference();
+        let sy = (cy / 16) as usize;
+        let ly = (cy & 15) as u32;
+
+        self.sections[sy].set_block(lx, ly, lz, value.as_palette_index());
     }
 
     #[must_use]
-    pub fn get_block(&self, cx: i32, cy: i32, cz: i32) -> PaletteBlockKind {
-        let cx = cx - 2; // ?? idk
-        let cy = cy + 64; // world height dependant!
+    pub fn get_block_local(&self, lx: u32, y: i32, lz: u32) -> PaletteBlockKind {
+        debug_assert!((0..=16).contains(&lx));
+        debug_assert!((0..=16).contains(&lz));
+        debug_assert!((-64..=319).contains(&y));
+
+        let cy = y + Self::get_height_difference();
         let sy = (cy / 16) as usize;
         let ly = (cy & 15) as u32;
-        let lx = (cx & 15) as u32;
-        let lz = (cz & 15) as u32;
 
         PaletteBlockKind::from_palette_index(self.sections[sy].get_block(lx, ly, lz))
     }
 
-    pub fn set_block(&mut self, cx: i32, cy: i32, cz: i32, value: PaletteBlockKind) {
-        let cx = cx - 2; // ?? idk
-        let cy = cy + 64; // world height dependant!
-        let sy = (cy / 16) as usize;
-        let ly = (cy & 15) as u32;
-        let lx = (cx & 15) as u32;
-        let lz = (cz & 15) as u32;
+    pub fn set_block_world(&mut self, wx: i32, y: i32, wz: i32, kind: PaletteBlockKind) {
+        let lx = wx.rem_euclid(16) as u32;
+        let lz = wz.rem_euclid(16) as u32;
 
-        self.sections[sy].set_block(lx, ly, lz, value.as_palette_index());
+        debug_assert!((0..=16).contains(&lx));
+        debug_assert!((0..=16).contains(&lz));
+        debug_assert!((-64..=319).contains(&y));
+
+        self.set_block_local(lx, y, lz, kind);
+    }
+
+    #[must_use]
+    pub fn get_block_world(&self, wx: i32, y: i32, wz: i32) -> PaletteBlockKind {
+        let lx = wx.rem_euclid(16) as u32;
+        let lz = wz.rem_euclid(16) as u32;
+
+        debug_assert!((0..=16).contains(&lx));
+        debug_assert!((0..=16).contains(&lz));
+        debug_assert!((-64..=319).contains(&y));
+
+        self.get_block_local(lx, y, lz)
     }
 
     pub fn encode(&self) -> anyhow::Result<PacketBytes> {
@@ -183,7 +186,7 @@ impl Chunk {
             let mut packed = Vec::with_capacity(section.data.len() * 8);
 
             for &x in &section.data {
-                packed.extend_from_slice(&x.to_le_bytes());
+                packed.extend_from_slice(&x.to_be_bytes());
             }
 
             data_bytes.extend_from_slice(&packed);

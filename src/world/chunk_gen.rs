@@ -1,15 +1,14 @@
-use std::{rc::Rc, sync::nonpoison::Mutex};
-
-use crate::world::palette::PaletteBlockKind;
+use crate::world::{chunk::Chunk, palette::PaletteBlockKind};
 use cgmath::Vector3;
 use noise::{NoiseFn, Perlin, Seedable};
 use rand::{Rng, RngExt, rngs::StdRng};
 
-pub struct ChunkGenerationParams<'lvl> {
+pub struct ChunkGenerationParams<'a> {
     pub cx: i32,
     pub cz: i32,
-    pub random: &'lvl mut StdRng,
-    pub noise: &'lvl mut Perlin,
+    pub chunk: &'a mut Chunk,
+    pub random: &'a mut StdRng,
+    pub noise: &'a mut Perlin,
 }
 
 #[optimize(speed)]
@@ -51,49 +50,16 @@ where
     }
 }
 
-pub enum ChunkRequest {
-    SetTile {
-        x: i32,
-        y: i32,
-        z: i32,
-        kind: PaletteBlockKind,
-    },
-    GetTile {
-        x: i32,
-        y: i32,
-        z: i32,
-    },
-}
-
-pub enum ChunkResponse {
-    None,
-    GetTile { tile: PaletteBlockKind },
-}
-
 #[allow(clippy::similar_names)]
 #[allow(clippy::cast_precision_loss)]
 #[allow(clippy::too_many_lines)]
 #[optimize(speed)]
-pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
-    params: &mut ChunkGenerationParams,
-    chk_req: Rc<Mutex<F>>,
-) {
+pub fn do_chunk_generation(params: &mut ChunkGenerationParams) {
     // TODO: Multi-thread the first 2 steps :)
     let noise = &mut *params.noise;
     let random = &mut *params.random;
 
     let decoration_noise = Perlin::new(noise.seed() + 1000);
-
-    let chk_req2 = chk_req.clone();
-    let get_tile = move |x, y, z| {
-        chk_req2.with_mut(|chk| match chk(ChunkRequest::GetTile { x, y, z }) {
-            ChunkResponse::None => unreachable!(),
-            ChunkResponse::GetTile { tile } => tile,
-        })
-    };
-    let place_tile = move |x, y, z, kind| {
-        chk_req.with_mut(|chk| chk(ChunkRequest::SetTile { x, y, z, kind }));
-    };
 
     let world_scale = 0.0007;
     let base_y = 20.0;
@@ -139,7 +105,7 @@ pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
                     PaletteBlockKind::Bedrock
                 };
 
-                place_tile(lx, ly, lz, kind);
+                params.chunk.set_block_world(wx as i32, ly, wz as i32, kind);
             }
         }
     }
@@ -165,8 +131,11 @@ pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
                 let h = v.clamp(0.0, 300.0);
                 let y = h.round_ties_even() as i32;
 
-                carve_sphere(lx, y, lz, 3, |x, y, z| {
-                    place_tile(x, y, z, PaletteBlockKind::Air);
+                let wx = lx + params.cx * 16;
+                let wz = lz + params.cz * 16;
+
+                carve_sphere(wx, y, wz, 3, |x, y, z| {
+                    params.chunk.set_block_world(x, y, z, PaletteBlockKind::Air);
                 });
             }
         }
@@ -178,8 +147,8 @@ pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
 
     for _ in 0..structure_count {
         // I call this one, digger bot! (or dirt bot)
-        let x = (random.next_u32() % 16) as i32;
-        let z = (random.next_u32() % 16) as i32;
+        let x = random.next_u32() % 16;
+        let z = random.next_u32() % 16;
 
         let top_surface_y = heights[x as usize][z as usize];
         let mut y = top_surface_y + 1;
@@ -187,7 +156,7 @@ pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
         // if we're above the build limit, OR
         // if the current block is air, then go down more
         while y > -64 {
-            if get_tile(x, y, z) != PaletteBlockKind::Air {
+            if params.chunk.get_block_local(x, y, z) != PaletteBlockKind::Air {
                 y += 1;
                 break;
             }
@@ -196,14 +165,16 @@ pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
         }
 
         let y = y - 1;
-        let mut pos = Vector3::new(x, y, z);
+        let mut pos = Vector3::new(x as i32, y, z as i32);
 
         loop {
             if random.random_bool(0.3) {
                 break;
             }
 
-            place_tile(pos.x, pos.y, pos.z, PaletteBlockKind::Dirt);
+            params
+                .chunk
+                .set_block_local(pos.x as u32, pos.y, pos.z as u32, PaletteBlockKind::Dirt);
 
             let directions = [
                 Vector3::new(1, 0, 0),
@@ -218,7 +189,7 @@ pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
             pos += dir;
 
             pos.x = pos.x.clamp(0, 16);
-            pos.y = pos.y.clamp(-64, 300);
+            pos.y = pos.y.clamp(0, 300);
             pos.z = pos.z.clamp(0, 16);
         }
     }

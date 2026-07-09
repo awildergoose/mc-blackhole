@@ -1,4 +1,5 @@
 use cgmath::Vector3;
+use tokio::sync::mpsc;
 
 use crate::{
     codecs::{base::MCDecode, game_profile::GameProfile},
@@ -21,15 +22,23 @@ use crate::{
             play::{
                 EntityEvent, GameEvent, cs_change_game_mode::CsChangeGameMode,
                 cs_chat_command::CsChatCommand, cs_move_player_pos::CsMovePlayerPos,
-                cs_move_player_pos_rot::CsMovePlayerPosRot, sc_entity_event::ScEntityEvent,
-                sc_game_event::ScGameEvent, sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
+                cs_move_player_pos_rot::CsMovePlayerPosRot,
+                sc_chunk_batch_finished::ScChunkBatchFinished,
+                sc_chunk_batch_start::ScChunkBatchStart, sc_entity_event::ScEntityEvent,
+                sc_game_event::ScGameEvent, sc_keep_alive::ScKeepAlive,
+                sc_level_chunk_with_light::ScLevelChunkWithLight, sc_login::ScLogin,
                 sc_player_abilities::ScPlayerAbilities, sc_player_position::ScPlayerPosition,
                 sc_plugin_message::ScPluginMessage, sc_set_center_chunk::ScSetCenterChunk,
             },
         },
         raw::{regs, tags},
     },
-    world::{entity::PlayerEntity, level::Level},
+    world::{
+        entity::PlayerEntity,
+        level::{Level, UPPPacket},
+        palette::PaletteBlockKind,
+        worker::WorldWorker,
+    },
 };
 
 pub enum ConnectionState {
@@ -62,6 +71,18 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
     let mut body;
     let mut level = Level::new(16);
     let player = level.add_entity(PlayerEntity::new());
+
+    level.add_metaball(Vector3::new(0, 0, 0), 8.0, 2.0, PaletteBlockKind::OakPlanks);
+
+    level.set_block(0, 20, 0, PaletteBlockKind::Grass);
+
+    let (worker, world) = WorldWorker::new(level);
+
+    tokio::spawn(async move {
+        if let Err(e) = worker.run().await {
+            eprintln!("world worker panicked: {e:?}");
+        }
+    });
 
     loop {
         match conn.read_packet().await {
@@ -161,28 +182,64 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                         // move player pos
                         if id == CsMovePlayerPos::ID {
                             let pkt = CsMovePlayerPos::decode(&mut data)?;
+                            let (sender, mut rcv) = mpsc::channel(16);
 
-                            level
+                            world
                                 .update_player_position(
                                     player,
-                                    conn,
                                     Vector3::new(pkt.x, pkt.y, pkt.z),
+                                    sender,
                                 )
                                 .await?;
+
+                            while let Some(pk) = rcv.recv().await {
+                                match pk {
+                                    UPPPacket::Begin(x, z) => {
+                                        conn.write_pkt(ScSetCenterChunk::new(x, z)).await?;
+                                        conn.write_pkt(ScChunkBatchStart::new()).await?;
+                                    }
+                                    UPPPacket::Chunk(chunk) => {
+                                        conn.write_pkt(ScLevelChunkWithLight::new(chunk.encode()?))
+                                            .await?;
+                                    }
+                                    UPPPacket::Finish(count) => {
+                                        conn.write_pkt(ScChunkBatchFinished::new(count)).await?;
+                                    }
+                                }
+                            }
+
                             continue;
                         }
 
                         // move player posrot
                         if id == CsMovePlayerPosRot::ID {
                             let pkt = CsMovePlayerPosRot::decode(&mut data)?;
+                            let (sender, mut rcv) = mpsc::channel(16);
 
-                            level
+                            world
                                 .update_player_position(
                                     player,
-                                    conn,
                                     Vector3::new(pkt.x, pkt.y, pkt.z),
+                                    sender,
                                 )
                                 .await?;
+
+                            while let Some(pk) = rcv.recv().await {
+                                match pk {
+                                    UPPPacket::Begin(x, z) => {
+                                        conn.write_pkt(ScSetCenterChunk::new(x, z)).await?;
+                                        conn.write_pkt(ScChunkBatchStart::new()).await?;
+                                    }
+                                    UPPPacket::Chunk(chunk) => {
+                                        conn.write_pkt(ScLevelChunkWithLight::new(chunk.encode()?))
+                                            .await?;
+                                    }
+                                    UPPPacket::Finish(count) => {
+                                        conn.write_pkt(ScChunkBatchFinished::new(count)).await?;
+                                    }
+                                }
+                            }
+
                             continue;
                         }
 
@@ -290,8 +347,8 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                                 is_hardcore: false,
                                 dimensions: vec!["overworld".to_owned()],
                                 max_players: 1,
-                                view_distance: level.view_distance,
-                                simulation_distance: level.view_distance,
+                                view_distance: world.get_view_distance().await?,
+                                simulation_distance: world.get_view_distance().await?,
                                 reduced_debug_info: false,
                                 respawn_screen: false,
                                 limited_crafting: false,
