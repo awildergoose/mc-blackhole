@@ -73,7 +73,6 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
     let player = level.add_entity(PlayerEntity::new());
 
     level.add_metaball(Vector3::new(0, 0, 0), 8.0, 2.0, PaletteBlockKind::OakPlanks);
-
     level.set_block(0, 20, 0, PaletteBlockKind::Grass);
 
     let (worker, world) = WorldWorker::new(level);

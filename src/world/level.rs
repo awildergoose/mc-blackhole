@@ -180,7 +180,7 @@ impl Level {
         &mut self,
         player: EntityId,
         position: Vector3<f64>,
-        packet_sender: mpsc::Sender<UPPPacket>,
+        upppacket_tx: mpsc::Sender<UPPPacket>,
     ) -> anyhow::Result<()> {
         self.with_entity_mut::<PlayerEntity, _, _>(player, |_, p| {
             p.update_position(position);
@@ -204,7 +204,7 @@ impl Level {
 
                 if self.can_send_chunk(pos) {
                     if !has_sent_chunks {
-                        packet_sender
+                        upppacket_tx
                             .send(UPPPacket::Begin(center_x, center_z))
                             .await?;
                         has_sent_chunks = true;
@@ -258,9 +258,9 @@ impl Level {
 
         chunks_rx.close();
 
-        // TODO: multi-thread encode
+        // TODO: don't clone
         while let Some((pos, chunk, insert)) = chunks_rx.recv().await {
-            packet_sender.send(UPPPacket::Chunk(chunk.clone())).await?;
+            upppacket_tx.send(UPPPacket::Chunk(chunk.clone())).await?;
 
             if insert {
                 self.chunks.insert(pos, chunk);
@@ -268,7 +268,7 @@ impl Level {
         }
 
         if has_sent_chunks {
-            packet_sender
+            upppacket_tx
                 .send(UPPPacket::Finish(chunk_count.load(Ordering::SeqCst)))
                 .await?;
         }
