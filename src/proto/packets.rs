@@ -96,6 +96,35 @@ macro_rules! create_enum_varint {
 
 #[macro_export]
 macro_rules! create_codec {
+    ($name:tt) => {
+        #[derive(Clone, Debug)]
+        pub struct $name;
+
+        impl $name {
+            #[must_use]
+            pub const fn new() -> Self {
+                Self
+            }
+        }
+
+        impl Default for $name {
+            fn default() -> Self {
+                Self
+            }
+        }
+
+        impl $crate::codecs::base::MCEncode for $name {
+            fn encode(&self, _dst: &mut $crate::proto::packet_bytes::PacketBytes) -> anyhow::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl $crate::codecs::base::MCDecode for $name {
+            fn decode(_src: &mut $crate::proto::packet_bytes::PacketBytes) -> anyhow::Result<Self> {
+                Ok(Self)
+            }
+        }
+    };
     ($name:tt, $($fname:tt => $ftype:ty),*) => {
         #[derive(Clone, Debug)]
         pub struct $name {
@@ -137,14 +166,20 @@ macro_rules! create_codec {
 
 #[macro_export]
 macro_rules! create_packet {
-    ($name:tt, $id: literal, $($fname:tt => $ftype:ty),*) => {
-        use $crate::proto::packets::Packet;
-        use paste::paste;
+    ($name:tt, $id:literal) => {
+        paste::paste! {
+            $crate::create_codec!($name);
 
-        paste! {
+            impl $crate::proto::packets::Packet for $name {
+                const ID: i32 = $id;
+            }
+        }
+    };
+    ($name:tt, $id:literal, $($fname:tt => $ftype:ty),*) => {
+        paste::paste! {
             $crate::create_codec!($name, $($fname => $ftype),*);
 
-            impl Packet for $name {
+            impl $crate::proto::packets::Packet for $name {
                 const ID: i32 = $id;
             }
         }
@@ -153,7 +188,17 @@ macro_rules! create_packet {
 
 #[macro_export]
 macro_rules! quickpkt {
-    ($name:tt, $id: literal, $($fname:tt => $ftype:ty),*) => {
+    ($name:tt, $id:literal) => {
+        paste::paste! {
+            pub mod $name {
+                #[allow(unused_imports)]
+                use super::*;
+
+                $crate::create_packet!([<$name:camel>], $id);
+            }
+        }
+    };
+    ($name:tt, $id:literal, $($fname:tt => $ftype:ty),*) => {
         paste::paste! {
             pub mod $name {
                 #[allow(unused_imports)]

@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     codecs::{
-        array::Array,
+        array::{Array, RemainingArray},
         base::{MCDecode, MCEncode},
         enums::Enum,
         game_profile::GameProfile,
@@ -97,6 +97,27 @@ impl PacketBytes {
         let mut arr = Vec::with_capacity(len as usize);
 
         for _ in 0..len {
+            arr.push(T::decode(self)?);
+        }
+
+        Ok(arr)
+    }
+
+    pub fn put_remaining_array<T: MCEncode + MCDecode>(
+        &mut self,
+        arr: RemainingArray<T>,
+    ) -> PutRes {
+        for ele in arr {
+            ele.encode(self)?;
+        }
+        Ok(())
+    }
+
+    pub fn get_remaining_array<T: MCEncode + MCDecode>(&mut self) -> GetRes<RemainingArray<T>> {
+        let remaining = self.data.remaining();
+        let mut arr = vec![];
+
+        for _ in 0..remaining {
             arr.push(T::decode(self)?);
         }
 

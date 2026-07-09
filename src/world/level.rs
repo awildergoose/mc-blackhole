@@ -1,5 +1,8 @@
 use dashmap::{DashMap, mapref::one::RefMut};
-use std::sync::nonpoison::Mutex;
+use std::sync::{
+    atomic::{AtomicI32, Ordering},
+    nonpoison::Mutex,
+};
 
 use cgmath::{Vector2, Vector3};
 use noise::Perlin;
@@ -8,7 +11,10 @@ use tokio::sync::mpsc;
 
 use crate::{
     net::framing::FramedConn,
-    proto::packets::play::sc_set_center_chunk::ScSetCenterChunk,
+    proto::packets::play::{
+        sc_chunk_batch_finished::ScChunkBatchFinished, sc_chunk_batch_start::ScChunkBatchStart,
+        sc_level_chunk_with_light::ScLevelChunkWithLight, sc_set_center_chunk::ScSetCenterChunk,
+    },
     world::{
         chunk::{Chunk, determine_chunk_seed},
         chunk_gen::ChunkGenerationParams,
@@ -113,6 +119,7 @@ impl Level {
         let mut handles = vec![];
 
         let radius = self.view_distance;
+        let chunk_count = AtomicI32::new(0);
 
         for cx in -radius..=radius {
             for cz in -radius..=radius {
@@ -124,16 +131,15 @@ impl Level {
                     if !has_sent_chunks {
                         conn.write_pkt(ScSetCenterChunk::new(center_x, center_z))
                             .await?;
-
-                        // chunks begin
-                        conn.write_packet(0x0C, &[]).await?;
+                        conn.write_pkt(ScChunkBatchStart::new()).await?;
                         has_sent_chunks = true;
                     }
 
                     if let Some(entry) = self.chunks.get(&pos) {
                         let payload = { entry.value().encode() }?;
                         drop(entry);
-                        conn.write_packet(0x2C, &payload).await?;
+                        conn.write_pkt(ScLevelChunkWithLight::new(payload.to_vec()))
+                            .await?;
                     } else {
                         let chunks_tx = chunks_tx.clone();
                         let seed = self.seed;
@@ -143,6 +149,8 @@ impl Level {
                             let _ = chunks_tx.send((pos, chunk));
                         }));
                     }
+
+                    chunk_count.fetch_add(1, Ordering::SeqCst);
                 }
             }
         }
@@ -154,13 +162,16 @@ impl Level {
         chunks_rx.close();
 
         while let Some((pos, chunk)) = chunks_rx.recv().await {
-            conn.write_packet(0x2C, &chunk.encode()?).await?;
+            conn.write_pkt(ScLevelChunkWithLight::new(chunk.encode()?.to_vec()))
+                .await?;
             self.chunks.insert(pos, chunk);
         }
 
         if has_sent_chunks {
-            // chunks end
-            conn.write_packet(0x0B, &[0x01]).await?;
+            conn.write_pkt(ScChunkBatchFinished::new(
+                chunk_count.load(Ordering::SeqCst),
+            ))
+            .await?;
         }
 
         let player_chunk = Vector2::new(

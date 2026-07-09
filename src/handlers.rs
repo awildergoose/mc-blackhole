@@ -9,8 +9,9 @@ use crate::{
         packets::{
             Packet,
             config::{
-                KnownPack, sc_select_known_packs::ScSelectKnownPacks,
-                sc_update_enabled_features::ScUpdateEnabledFeatures,
+                KnownPack, sc_finish_configuration::ScFinishConfiguration,
+                sc_registries::ScRegistries, sc_select_known_packs::ScSelectKnownPacks,
+                sc_tags::ScTags, sc_update_enabled_features::ScUpdateEnabledFeatures,
             },
             handshake::cs_intention::CsIntention,
             login::{
@@ -92,33 +93,50 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                     ConnectionState::Configuration => {
                         if id == 0x00 {
                             // registries
-                            conn.write_packet(0x07, regs::SECTION0).await?;
-                            conn.write_packet(0x07, regs::SECTION1).await?;
-                            conn.write_packet(0x07, regs::SECTION2).await?;
-                            conn.write_packet(0x07, regs::SECTION3).await?;
-                            conn.write_packet(0x07, regs::SECTION4).await?;
-                            conn.write_packet(0x07, regs::SECTION5).await?;
-                            conn.write_packet(0x07, regs::SECTION6).await?;
-                            conn.write_packet(0x07, regs::SECTION7).await?;
-                            conn.write_packet(0x07, regs::SECTION8).await?;
-                            conn.write_packet(0x07, regs::SECTION9).await?;
-                            conn.write_packet(0x07, regs::SECTION10).await?;
-                            conn.write_packet(0x07, regs::SECTION11).await?;
-                            conn.write_packet(0x07, regs::SECTION12).await?;
-                            conn.write_packet(0x07, regs::SECTION13).await?;
-                            conn.write_packet(0x07, regs::SECTION14).await?;
-                            conn.write_packet(0x07, regs::SECTION15).await?;
-                            conn.write_packet(0x07, regs::SECTION16).await?;
-                            conn.write_packet(0x07, regs::SECTION17).await?;
-                            conn.write_packet(0x07, regs::SECTION18).await?;
-                            conn.write_packet(0x07, regs::SECTION19).await?;
-                            conn.write_packet(0x07, regs::SECTION20).await?;
-
-                            conn.write_packet(0x0D, tags::TAGS).await?;
-
-                            // finish configuration
-                            body = PacketBytes::new();
-                            conn.write_packet(0x03, &body).await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION0)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION1)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION2)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION3)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION4)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION5)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION6)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION7)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION8)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION9)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION10)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION11)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION12)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION13)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION14)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION15)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION16)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION17)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION18)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION19)))
+                                .await?;
+                            conn.write_pkt(ScRegistries::new(Vec::from(regs::SECTION20)))
+                                .await?;
+                            conn.write_pkt(ScTags::new(Vec::from(tags::TAGS))).await?;
+                            conn.write_pkt(ScFinishConfiguration::new()).await?;
                             state = ConnectionState::Play;
                         } else {
                             eprintln!("configuration received packet id {id:X}");
@@ -270,7 +288,7 @@ pub async fn handle_connection(conn: &mut FramedConn) -> anyhow::Result<()> {
                             ))
                             .await?;
 
-                            // tab list
+                            // Player Info Update (tab list)
                             body = PacketBytes::new();
                             // 0x08 (list) | 0x01 (add player)
                             body.put_u8(0x09)?; // the bit

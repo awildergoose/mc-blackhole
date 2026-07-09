@@ -180,6 +180,7 @@ pub fn do_chunk_generation<F: FnMut(ChunkRequest) -> ChunkResponse>(
     params: &mut ChunkGenerationParams,
     chk_req: Rc<Mutex<F>>,
 ) {
+    // TODO: Multi-thread the first 2 steps :)
     let noise = &mut *params.noise;
     let random = &mut *params.random;
 

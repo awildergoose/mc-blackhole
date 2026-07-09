@@ -1,5 +1,5 @@
-Serverbound means client -> server
-Clientbound means server -> client
+Serverbound (bound to server) means client -> server
+Clientbound (bound to client) means server -> client
 sc means server -> client
 cs means client -> server
 version 1.21.10
