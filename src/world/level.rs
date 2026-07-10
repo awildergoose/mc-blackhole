@@ -1,28 +1,15 @@
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicI32, Ordering},
-        nonpoison::Mutex,
-    },
-};
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::RwLock;
 
 use cgmath::{Vector2, Vector3};
 use noise::Perlin;
 use rand::{SeedableRng, rngs::StdRng};
-use tokio::task::JoinSet;
 
-use crate::{
-    net::handles::PacketWriterHandle,
-    proto::packets::play::{
-        sc_chunk_batch_finished::ScChunkBatchFinished, sc_chunk_batch_start::ScChunkBatchStart,
-        sc_level_chunk_with_light::ScLevelChunkWithLight, sc_set_center_chunk::ScSetCenterChunk,
-    },
-    world::{
-        chunk::{Chunk, determine_chunk_seed},
-        chunk_gen::{ChunkGenerationParams, do_chunk_generation},
-        entity::{Entity, PlayerEntity},
-        palette::PaletteBlockKind,
-    },
+use crate::world::{
+    chunk::{Chunk, determine_chunk_seed},
+    chunk_gen::{ChunkGenerationParams, do_chunk_generation},
+    entity::{Entity, player::PlayerEntity},
+    palette::PaletteBlockKind,
 };
 
 pub type ChunkPos = Vector2<i32>;
@@ -58,12 +45,12 @@ impl BlockPatch {
 }
 
 pub struct Level {
-    pub entities: Vec<Mutex<Box<dyn Entity>>>,
+    pub entities: Vec<Arc<RwLock<Box<dyn Entity>>>>,
     pub chunks: HashMap<ChunkPos, Chunk>,
     pub patches: HashMap<ChunkPos, Vec<BlockPatch>>,
-    pub sent_chunks: Vec<ChunkPos>,
     pub seed: u64,
     pub view_distance: i32,
+    pub tick_counter: u64,
 }
 
 impl Level {
@@ -75,34 +62,34 @@ impl Level {
             entities: vec![],
             chunks: HashMap::new(),
             patches: HashMap::new(),
-            sent_chunks: vec![],
             seed,
             view_distance,
+            tick_counter: 0,
         }
     }
 
     pub fn add_entity<T: Entity + 'static>(&mut self, entity: T) -> EntityId {
-        self.entities.push(Mutex::new(Box::new(entity)));
+        self.entities.push(Arc::new(RwLock::new(Box::new(entity))));
         self.entities.len() - 1
     }
 
     #[allow(clippy::significant_drop_tightening)]
-    pub fn with_entity<T: Entity + 'static, F, R>(&self, id: EntityId, f: F) -> Option<R>
+    pub async fn with_entity<T: Entity + 'static, F, R>(&self, id: EntityId, f: F) -> Option<R>
     where
         F: FnOnce(&Self, &T) -> R,
     {
-        let entity = self.entities.get(id)?.lock();
+        let entity = self.entities.get(id)?.write().await;
         let entity = entity.as_any().downcast_ref::<T>()?;
 
         Some(f(self, entity))
     }
 
     #[allow(clippy::significant_drop_tightening)]
-    pub fn with_entity_mut<T: Entity + 'static, F, R>(&self, id: EntityId, f: F) -> Option<R>
+    pub async fn with_entity_mut<T: Entity + 'static, F, R>(&self, id: EntityId, f: F) -> Option<R>
     where
         F: FnOnce(&Self, &mut T) -> R,
     {
-        let mut entity = self.entities.get(id)?.lock();
+        let mut entity = self.entities.get(id)?.write().await;
         let entity = entity.as_any_mut().downcast_mut::<T>()?;
 
         Some(f(self, entity))
@@ -158,6 +145,7 @@ impl Level {
         let min_z = (bz as f32 - radius - 1.0).floor() as i32;
         let max_z = (bz as f32 + radius + 1.0).ceil() as i32;
 
+        // TODO: make it melt with the surrounding ground
         for wy in min_y..=max_y {
             for wx in min_x..=max_x {
                 for wz in min_z..=max_z {
@@ -199,130 +187,28 @@ impl Level {
             .get_block_local(lx, wy, lz)
     }
 
-    pub fn can_send_chunk(&mut self, pos: ChunkPos) -> bool {
-        if !self.sent_chunks.contains(&pos) {
-            self.sent_chunks.push(pos);
-            return true;
+    pub async fn tick(&mut self) -> anyhow::Result<()> {
+        let entities = self.entities.clone();
+
+        for ent in &entities {
+            let mut e = ent.write().await;
+            e.tick(self).await?;
+            drop(e);
         }
 
-        false
+        self.tick_counter += 1;
+        Ok(())
     }
 
     pub async fn update_player_position(
         &mut self,
         player: EntityId,
         position: Vector3<f64>,
-        writer: PacketWriterHandle,
     ) -> anyhow::Result<()> {
         self.with_entity_mut::<PlayerEntity, _, _>(player, |_, p| {
             p.update_position(position);
-        });
-
-        let mut has_sent_chunks = false;
-        let center_x = (position.x / 16.0).floor() as i32;
-        let center_z = (position.z / 16.0).floor() as i32;
-
-        let mut join = JoinSet::new();
-
-        let radius = self.view_distance;
-        let chunk_count = AtomicI32::new(0);
-
-        for cx in -radius..=radius {
-            for cz in -radius..=radius {
-                let nx = center_x + cx;
-                let nz = center_z + cz;
-                let pos = Vector2::new(nx, nz);
-
-                if !self.can_send_chunk(pos) {
-                    continue;
-                }
-
-                if !has_sent_chunks {
-                    let _ = writer
-                        .write_pkt(ScSetCenterChunk::new(center_x, center_z))
-                        .await;
-                    let _ = writer.write_pkt(ScChunkBatchStart::new()).await;
-                    has_sent_chunks = true;
-                }
-
-                if self.chunks.contains_key(&pos) {
-                    join.spawn(async move { Ok::<_, anyhow::Error>((pos, None)) });
-                } else {
-                    let seed = self.seed;
-                    join.spawn(async move {
-                        let mut chunk = Chunk::new(pos.x, pos.y);
-                        let mut rng =
-                            StdRng::seed_from_u64(determine_chunk_seed(seed, pos.x, pos.y));
-                        let mut noise = Perlin::new(seed as u32);
-                        let mut params = ChunkGenerationParams {
-                            cx: pos.x,
-                            cz: pos.y,
-                            chunk: &mut chunk,
-                            random: &mut rng,
-                            noise: &mut noise,
-                        };
-                        do_chunk_generation(&mut params);
-                        Ok::<_, anyhow::Error>((pos, Some(chunk)))
-                    });
-                }
-
-                chunk_count.fetch_add(1, Ordering::SeqCst);
-            }
-        }
-
-        while let Some(res) = join.join_next().await {
-            let (pos, generated_chunk) = res??;
-
-            if let Some(chunk) = generated_chunk {
-                if writer
-                    .write_pkt(ScLevelChunkWithLight::new(chunk.encode()?))
-                    .await
-                    .is_err()
-                {
-                    return Ok(());
-                }
-
-                self.chunks.insert(pos, chunk);
-            } else if writer
-                .write_pkt(ScLevelChunkWithLight::new(
-                    self.chunks
-                        .get(&pos)
-                        .ok_or_else(|| anyhow::anyhow!("channel sent invalid chunk"))?
-                        .encode()?,
-                ))
-                .await
-                .is_err()
-            {
-                return Ok(());
-            }
-        }
-
-        if has_sent_chunks {
-            let _ = writer
-                .write_pkt(ScChunkBatchFinished::new(
-                    chunk_count.load(Ordering::SeqCst),
-                ))
-                .await;
-        }
-
-        let player_chunk = Vector2::new(
-            (position.x / 16.0).floor() as i32,
-            (position.z / 16.0).floor() as i32,
-        );
-
-        // unload far away chunks
-        self.sent_chunks.retain(|chunk| {
-            let dx = chunk.x - player_chunk.x;
-            let dz = chunk.y - player_chunk.y;
-
-            dx.abs() <= radius && dz.abs() <= radius
-        });
-        self.chunks.retain(|pos, _chunk| {
-            let dx = pos.x - player_chunk.x;
-            let dz = pos.y - player_chunk.y;
-
-            dx.abs() <= radius && dz.abs() <= radius
-        });
+        })
+        .await;
 
         Ok(())
     }

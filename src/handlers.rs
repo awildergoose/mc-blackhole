@@ -4,7 +4,10 @@ use tokio::{runtime::Handle, sync::mpsc};
 use crate::{
     codecs::{base::MCDecode, game_profile::GameProfile},
     expect_packet,
-    net::{framing::FramedConn, handles::PacketWriterHandle},
+    net::{
+        framing::FramedConn,
+        handles::{PacketWriterChannel, PacketWriterHandle},
+    },
     proto::{
         packet_bytes::PacketBytes,
         packets::{
@@ -31,7 +34,7 @@ use crate::{
         raw::{regs, tags},
     },
     world::{
-        entity::PlayerEntity,
+        entity::player::PlayerEntity,
         level::Level,
         palette::PaletteBlockKind,
         worker::{WorldHandle, WorldWorker},
@@ -59,8 +62,6 @@ impl Drop for StopWorldOnDrop {
     }
 }
 
-pub type PacketWriterChannel = (i32, Vec<u8>);
-
 #[allow(clippy::too_many_lines)]
 pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
     let (mut rd, mut wr) = conn.split();
@@ -81,10 +82,20 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
     let ls = ScLoginSuccess::new(GameProfile::new(login.uuid, login.username));
     wr.write_pkt(ls.clone()).await?;
 
+    let (write_tx, mut write_rx) = mpsc::channel::<PacketWriterChannel>(32);
+    let writer = PacketWriterHandle::from(write_tx.clone());
+    let writer_handle = tokio::spawn(async move {
+        while let Some((packet_id, pkt)) = write_rx.recv().await {
+            wr.write_packet(packet_id, &pkt).await?;
+        }
+
+        Ok::<(), anyhow::Error>(())
+    });
+
     let mut client_tick = 0;
     let mut body;
     let mut level = Level::new(16);
-    let player = level.add_entity(PlayerEntity::new());
+    let player = level.add_entity(PlayerEntity::new(writer.clone()));
 
     level.add_metaball(
         Vector3::new(0, 23, 0),
@@ -101,16 +112,6 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
         if let Err(e) = worker.run().await {
             eprintln!("world worker panicked: {e:?}");
         }
-    });
-
-    let (write_tx, mut write_rx) = mpsc::channel::<PacketWriterChannel>(32);
-    let writer = PacketWriterHandle::from(write_tx.clone());
-    let writer_handle = tokio::spawn(async move {
-        while let Some((packet_id, pkt)) = write_rx.recv().await {
-            wr.write_packet(packet_id, &pkt).await?;
-        }
-
-        Ok::<(), anyhow::Error>(())
     });
 
     loop {
@@ -220,6 +221,8 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                             }
 
                             client_tick += 1;
+                            // TODO: put this on another thread
+                            world.tick().await?;
                             continue;
                         }
 
@@ -233,13 +236,8 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                             let pkt = CsMovePlayerPos::decode(&mut data)?;
 
                             world
-                                .update_player_position(
-                                    player,
-                                    Vector3::new(pkt.x, pkt.y, pkt.z),
-                                    writer.clone(),
-                                )
+                                .update_player_position(player, Vector3::new(pkt.x, pkt.y, pkt.z))
                                 .await?;
-
                             continue;
                         }
 
@@ -248,13 +246,8 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                             let pkt = CsMovePlayerPosRot::decode(&mut data)?;
 
                             world
-                                .update_player_position(
-                                    player,
-                                    Vector3::new(pkt.x, pkt.y, pkt.z),
-                                    writer.clone(),
-                                )
+                                .update_player_position(player, Vector3::new(pkt.x, pkt.y, pkt.z))
                                 .await?;
-
                             continue;
                         }
 

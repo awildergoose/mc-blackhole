@@ -1,6 +1,8 @@
 use tokio::sync::mpsc;
 
-use crate::{handlers::PacketWriterChannel, proto::packets::Packet};
+use crate::proto::packets::Packet;
+
+pub type PacketWriterChannel = (i32, Vec<u8>);
 
 #[derive(Clone)]
 pub struct PacketWriterHandle {

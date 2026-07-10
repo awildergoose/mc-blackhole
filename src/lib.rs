@@ -7,8 +7,6 @@
 // I'm sorry to the stable Rust users
 #![allow(incomplete_features)]
 #![feature(lazy_type_alias)]
-#![feature(sync_nonpoison)]
-#![feature(nonpoison_mutex)]
 #![feature(optimize_attribute)]
 
 pub mod codecs;
@@ -17,3 +15,16 @@ pub mod net;
 pub mod proto;
 pub mod server;
 pub mod world;
+
+pub const STRICT: bool = false;
+
+use std::pin::Pin;
+
+pub type AsyncTraitFn<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+#[macro_export]
+macro_rules! async_trait_fn {
+    ($block:block) => {
+        Box::pin(async move $block)
+    };
+}

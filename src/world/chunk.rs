@@ -1,6 +1,7 @@
 use std::hash::{DefaultHasher, Hasher};
 
 use crate::{
+    STRICT,
     proto::{packet_bytes::PacketBytes, varint::EncodedVarInt},
     world::palette::PaletteBlockKind,
 };
@@ -17,7 +18,9 @@ struct Section {
 
 impl Section {
     fn new(bits_per_entry: u32, num_entries: u32) -> Self {
-        debug_assert!(bits_per_entry != 0);
+        if STRICT {
+            debug_assert!(bits_per_entry != 0);
+        }
 
         let entries_per_long = Self::entries_per_long(bits_per_entry);
         let num_longs = num_entries.div_ceil(entries_per_long);
@@ -109,9 +112,11 @@ impl Chunk {
     }
 
     pub fn set_block_local(&mut self, lx: u32, y: i32, lz: u32, value: PaletteBlockKind) {
-        debug_assert!((0..16).contains(&lx));
-        debug_assert!((0..16).contains(&lz));
-        debug_assert!((-64..=319).contains(&y));
+        if STRICT {
+            debug_assert!((0..16).contains(&lx));
+            debug_assert!((0..16).contains(&lz));
+            debug_assert!((-64..=319).contains(&y));
+        }
 
         let cy = y + Self::get_height_difference();
         let sy = (cy / 16) as usize;
@@ -122,9 +127,11 @@ impl Chunk {
 
     #[must_use]
     pub fn get_block_local(&self, lx: u32, y: i32, lz: u32) -> PaletteBlockKind {
-        debug_assert!((0..16).contains(&lx));
-        debug_assert!((0..16).contains(&lz));
-        debug_assert!((-64..=319).contains(&y));
+        if STRICT {
+            debug_assert!((0..16).contains(&lx));
+            debug_assert!((0..16).contains(&lz));
+            debug_assert!((-64..=319).contains(&y));
+        }
 
         let cy = y + Self::get_height_difference();
         let sy = (cy / 16) as usize;

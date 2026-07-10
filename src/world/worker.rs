@@ -1,10 +1,7 @@
 use cgmath::Vector3;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::{
-    net::handles::PacketWriterHandle,
-    world::level::{EntityId, Level},
-};
+use crate::world::level::{EntityId, Level};
 
 pub enum WorldRequest {
     GetViewDistance {
@@ -13,9 +10,9 @@ pub enum WorldRequest {
     UpdatePlayerPosition {
         player: EntityId,
         position: Vector3<f64>,
-        packet_writer: PacketWriterHandle,
     },
     Stop,
+    Tick,
 }
 
 #[derive(Clone)]
@@ -38,15 +35,15 @@ impl WorldHandle {
         &self,
         player: EntityId,
         position: Vector3<f64>,
-        packet_writer: PacketWriterHandle,
     ) -> anyhow::Result<()> {
         self.tx
-            .send(WorldRequest::UpdatePlayerPosition {
-                player,
-                position,
-                packet_writer,
-            })
+            .send(WorldRequest::UpdatePlayerPosition { player, position })
             .await?;
+        Ok(())
+    }
+
+    pub async fn tick(&self) -> anyhow::Result<()> {
+        self.tx.send(WorldRequest::Tick).await?;
         Ok(())
     }
 
@@ -87,17 +84,16 @@ impl WorldWorker {
                 WorldRequest::GetViewDistance { respond } => {
                     let _ = respond.send(self.level().view_distance);
                 }
-                WorldRequest::UpdatePlayerPosition {
-                    player,
-                    position,
-                    packet_writer,
-                } => {
+                WorldRequest::UpdatePlayerPosition { player, position } => {
                     self.level()
-                        .update_player_position(player, position, packet_writer)
+                        .update_player_position(player, position)
                         .await?;
                 }
                 WorldRequest::Stop => {
                     break;
+                }
+                WorldRequest::Tick => {
+                    self.level().tick().await?;
                 }
             }
         }
