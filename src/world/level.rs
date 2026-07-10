@@ -74,7 +74,7 @@ impl Level {
         self.entities.len() - 1
     }
 
-    #[allow(clippy::significant_drop_tightening)]
+    #[expect(clippy::significant_drop_tightening)]
     pub async fn with_entity<T: Entity + 'static, F, R>(&self, id: EntityId, f: F) -> Option<R>
     where
         F: FnOnce(&Self, &T) -> R,
@@ -85,7 +85,7 @@ impl Level {
         Some(f(self, entity))
     }
 
-    #[allow(clippy::significant_drop_tightening)]
+    #[expect(clippy::significant_drop_tightening)]
     pub async fn with_entity_mut<T: Entity + 'static, F, R>(&self, id: EntityId, f: F) -> Option<R>
     where
         F: FnOnce(&Self, &mut T) -> R,
@@ -124,7 +124,7 @@ impl Level {
     }
 
     #[must_use]
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(clippy::missing_panics_doc)]
     // This will *never* panic, I think, I hope.
     pub fn get_chunk(&mut self, pos: ChunkPos) -> &mut Chunk {
         if !self.chunks.contains_key(&pos) {
@@ -139,7 +139,7 @@ impl Level {
         self.chunks.get_mut(&pos).unwrap()
     }
 
-    #[allow(clippy::cast_precision_loss)]
+    #[expect(clippy::cast_precision_loss)]
     pub fn add_metaball(
         &mut self,
         center_world: Vector3<i32>,

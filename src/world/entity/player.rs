@@ -19,7 +19,6 @@ use crate::{
 pub struct PlayerEntity {
     base: EntityBase,
     position: Vector3<f64>,
-    last_chunk: ChunkPos,
     sent_chunks: HashSet<ChunkPos>,
     chunk_queue: Vec<ChunkPos>,
     packet_writer: PacketWriterHandle,
@@ -31,7 +30,6 @@ impl PlayerEntity {
         Self {
             base: EntityBase::default(),
             position: Vector3::new(0.0, 0.0, 0.0),
-            last_chunk: Vector2::new(0, 0),
             sent_chunks: HashSet::new(),
             chunk_queue: Vec::new(),
             packet_writer,
@@ -49,8 +47,11 @@ impl PlayerEntity {
 
     #[must_use]
     const fn get_chunk_position(&self) -> ChunkPos {
-        let (cx, cz, _, _) =
-            Level::world_to_chunk_and_local(self.position.x as i32, self.position.z as i32);
+        let (cx, cz, _, _) = Level::world_to_chunk_and_local(
+            self.position.x.floor() as i32,
+            self.position.z.floor() as i32,
+        );
+
         Vector2::new(cx, cz)
     }
 }
@@ -68,6 +69,7 @@ impl Entity for PlayerEntity {
         self
     }
 
+    #[expect(clippy::too_many_lines)]
     fn tick<'a>(&'a mut self, level: &'a mut Level) -> AsyncTraitFn<'a, anyhow::Result<()>> {
         async_trait_fn!({
             let mut has_sent_chunks = false;
@@ -79,27 +81,39 @@ impl Entity for PlayerEntity {
             let radius = level.view_distance;
             let mut chunk_count = 0;
 
-            if self.last_chunk != self.get_chunk_position() || self.chunk_queue.is_empty() {
-                let mut positions = Vec::new();
+            let player_chunk = self.get_chunk_position();
 
-                for x in -radius..=radius {
-                    for z in -radius..=radius {
-                        positions.push(Vector2::new(center_x + x, center_z + z));
+            self.chunk_queue.retain(|pos| {
+                let dx = pos.x - player_chunk.x;
+                let dz = pos.y - player_chunk.y;
+
+                dx * dx + dz * dz <= radius * radius
+            });
+
+            for x in -radius..=radius {
+                for z in -radius..=radius {
+                    let pos = Vector2::new(player_chunk.x + x, player_chunk.y + z);
+
+                    if !self.sent_chunks.contains(&pos) && !self.chunk_queue.contains(&pos) {
+                        self.chunk_queue.push(pos);
                     }
                 }
-
-                positions.sort_by_key(|p| {
-                    let dx = p.x - center_x;
-                    let dz = p.y - center_z;
-                    dx * dx + dz * dz
-                });
-
-                self.chunk_queue = positions;
-                self.last_chunk = self.get_chunk_position();
             }
 
-            // 5 chunks at a time
-            for pos in self.chunk_queue.drain(..self.chunk_queue.len().min(5)) {
+            self.chunk_queue.sort_by_key(|p| {
+                let dx = p.x - player_chunk.x;
+                let dz = p.y - player_chunk.y;
+
+                dx * dx + dz * dz
+            });
+
+            let ticks_to_fill = 20 * 5;
+            let chunks_per_tick = ((std::f64::consts::PI * f64::from(radius) * f64::from(radius))
+                / f64::from(ticks_to_fill))
+            .ceil() as usize;
+
+            let amount = chunks_per_tick.min(5);
+            for pos in self.chunk_queue.drain(..self.chunk_queue.len().min(amount)) {
                 if !self.sent_chunks.insert(pos) {
                     continue;
                 }

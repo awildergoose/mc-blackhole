@@ -50,10 +50,8 @@ where
     }
 }
 
-#[allow(clippy::similar_names)]
-#[allow(clippy::cast_precision_loss)]
-#[allow(clippy::too_many_lines)]
 #[optimize(speed)]
+#[expect(clippy::too_many_lines)]
 pub fn do_chunk_generation(params: &mut ChunkGenerationParams) {
     // TODO: Multi-thread the first 2 steps :)
     let noise = &mut *params.noise;

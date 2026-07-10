@@ -1,5 +1,10 @@
+use std::{sync::Arc, time::Duration};
+
 use cgmath::Vector3;
-use tokio::{runtime::Handle, sync::mpsc};
+use tokio::{
+    runtime::Handle,
+    sync::{RwLock, mpsc},
+};
 
 use crate::{
     codecs::{base::MCDecode, game_profile::GameProfile},
@@ -41,12 +46,14 @@ use crate::{
     },
 };
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub enum ConnectionState {
     Handshaking,
     Status,
     Login,
     Configuration,
     Play,
+    Ingame,
 }
 
 struct StopWorldOnDrop(WorldHandle);
@@ -62,10 +69,10 @@ impl Drop for StopWorldOnDrop {
     }
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
     let (mut rd, mut wr) = conn.split();
-    let mut state: ConnectionState; // Handshaking
+    let state = Arc::new(RwLock::new(ConnectionState::Handshaking));
     let intention = expect_packet!(rd, CsIntention)?;
     if intention.intent != 2 {
         // not a login intention
@@ -73,7 +80,9 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
     }
     let login = expect_packet!(rd, CsLoginStart)?;
 
-    state = ConnectionState::Login;
+    {
+        *state.write().await = ConnectionState::Login;
+    }
 
     let sc = ScSetCompression::new(256);
     wr.write_pkt(sc.clone()).await?;
@@ -114,10 +123,30 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
         }
     });
 
+    let ticker_world = world.clone();
+    let ticker_state = state.clone();
+    let ticker_handle = tokio::spawn(async move {
+        // 20 TPS
+        let mut interval = tokio::time::interval(Duration::from_millis(50));
+
+        loop {
+            interval.tick().await;
+            if *ticker_state.read().await != ConnectionState::Ingame {
+                continue;
+            }
+            if let Err(e) = ticker_world.tick().await {
+                eprintln!("failed to tick world: {e:?}");
+                break;
+            }
+        }
+    });
+
     loop {
         match rd.read_packet().await {
             Ok((id, mut data)) => {
-                match state {
+                let current_state = *state.read().await;
+
+                match current_state {
                     ConnectionState::Login => {
                         if id == 0x03 {
                             writer
@@ -135,7 +164,9 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                                 })
                                 .await?;
 
-                            state = ConnectionState::Configuration;
+                            {
+                                *state.write().await = ConnectionState::Configuration;
+                            }
                         } else {
                             eprintln!("login received packet id {id:X}");
                         }
@@ -208,12 +239,14 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                                 .await?;
                             writer.write_pkt(ScTags::new(Vec::from(tags::TAGS))).await?;
                             writer.write_pkt(ScFinishConfiguration::new()).await?;
-                            state = ConnectionState::Play;
+                            {
+                                *state.write().await = ConnectionState::Play;
+                            }
                         } else {
                             eprintln!("configuration received packet id {id:X}");
                         }
                     }
-                    ConnectionState::Play => {
+                    ConnectionState::Play | ConnectionState::Ingame => {
                         // client tick end
                         if id == 0x0C {
                             if client_tick % 20 == 0 {
@@ -221,8 +254,6 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                             }
 
                             client_tick += 1;
-                            // TODO: put this on another thread
-                            world.tick().await?;
                             continue;
                         }
 
@@ -341,7 +372,7 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                         }
 
                         // change game mode
-                        #[allow(clippy::cast_precision_loss)]
+                        #[expect(clippy::cast_precision_loss)]
                         if id == CsChangeGameMode::ID {
                             let pkt = CsChangeGameMode::decode(&mut data)?;
 
@@ -424,6 +455,10 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
 
                             // keep alive
                             writer.write_pkt(ScKeepAlive::new(1)).await?;
+
+                            {
+                                *state.write().await = ConnectionState::Ingame;
+                            }
                         }
                     }
                     _ => unreachable!(),
@@ -439,6 +474,7 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
     world.stop().await?;
     handle.await?;
     writer_handle.abort();
+    ticker_handle.abort();
 
     Ok(())
 }
