@@ -131,11 +131,13 @@ pub fn do_chunk_generation(params: &mut ChunkGenerationParams) {
                 let h = v.clamp(0.0, 300.0);
                 let y = h.round_ties_even() as i32;
 
-                let wx = lx + params.cx * 16;
-                let wz = lz + params.cz * 16;
-
-                carve_sphere(wx, y, wz, 3, |x, y, z| {
-                    params.chunk.set_block_world(x, y, z, PaletteBlockKind::Air);
+                carve_sphere(lx, y, lz, 3, |x, y, z| {
+                    if !(0..16).contains(&x) || !(0..16).contains(&z) {
+                        return;
+                    }
+                    params
+                        .chunk
+                        .set_block_local(x as u32, y, z as u32, PaletteBlockKind::Air);
                 });
             }
         }

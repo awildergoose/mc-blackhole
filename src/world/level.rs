@@ -196,8 +196,6 @@ impl Level {
         let radius = self.view_distance;
         let chunk_count = AtomicI32::new(0);
 
-        println!("updating player position");
-
         for cx in -radius..=radius {
             for cz in -radius..=radius {
                 let nx = center_x + cx;
@@ -258,16 +256,12 @@ impl Level {
             }
         }
 
-        println!("finished receiving chunks");
-
         if has_sent_chunks {
-            println!("sending finish");
             let _ = writer
                 .write_pkt(ScChunkBatchFinished::new(
                     chunk_count.load(Ordering::SeqCst),
                 ))
                 .await;
-            println!("sent finish");
         }
 
         let player_chunk = Vector2::new(
@@ -288,8 +282,6 @@ impl Level {
 
             dx.abs() <= radius && dz.abs() <= radius
         });
-
-        println!("removed unused chunks");
 
         Ok(())
     }

@@ -9,18 +9,25 @@ use strum::IntoEnumIterator;
 #[derive(Clone)]
 struct Section {
     data: Vec<u64>,
+
+    // DO NOT MUTATE THIS WITHOUT UPDATING `mask` AND `entries_per_long`
     bits_per_entry: u32,
+    mask: u64,
+    entries_per_long: u32,
 }
 
 impl Section {
     fn new(bits_per_entry: u32, num_entries: u32) -> Self {
-        let b = bits_per_entry;
-        let entries_per_long = 64 / b;
+        debug_assert!(bits_per_entry != 0);
+
+        let entries_per_long = Self::entries_per_long(bits_per_entry);
         let num_longs = num_entries.div_ceil(entries_per_long);
 
         Self {
             data: vec![0u64; num_longs as usize],
-            bits_per_entry: b,
+            bits_per_entry,
+            mask: Self::mask(bits_per_entry),
+            entries_per_long,
         }
     }
 
@@ -30,44 +37,32 @@ impl Section {
     }
 
     #[inline]
-    const fn entries_per_long(&self) -> u32 {
-        64 / self.bits_per_entry
+    const fn entries_per_long(bits_per_entry: u32) -> u32 {
+        64 / bits_per_entry
     }
 
     #[inline]
-    const fn mask(&self) -> u64 {
-        if self.bits_per_entry == 0 {
-            0
-        } else {
-            (1u64 << self.bits_per_entry) - 1
-        }
+    const fn mask(bits_per_entry: u32) -> u64 {
+        (1u64 << bits_per_entry) - 1
     }
 
     fn get_at_index(&self, i: u32) -> u64 {
-        if self.bits_per_entry == 0 {
-            return 0;
-        }
-
         let b = self.bits_per_entry;
-        let epl = self.entries_per_long();
+        let epl = self.entries_per_long;
         let long_index = (i / epl) as usize;
         let bit_index = (i % epl) * b;
 
-        let m = self.mask();
+        let m = self.mask;
         (self.data[long_index] >> bit_index) & m
     }
 
     fn set_at_index(&mut self, i: u32, value: u64) {
-        if self.bits_per_entry == 0 {
-            return;
-        }
-
         let b = self.bits_per_entry;
-        let epl = self.entries_per_long();
+        let epl = self.entries_per_long;
         let long_index = (i / epl) as usize;
         let bit_index = (i % epl) * b;
 
-        let m = self.mask();
+        let m = self.mask;
         self.data[long_index] &= !(m << bit_index);
         self.data[long_index] |= (value & m) << bit_index;
     }
@@ -138,29 +133,6 @@ impl Chunk {
         let ly = (cy & 15) as u32;
 
         PaletteBlockKind::from_palette_index(self.sections[sy].get_block(lx, ly, lz))
-    }
-
-    pub fn set_block_world(&mut self, wx: i32, y: i32, wz: i32, kind: PaletteBlockKind) {
-        let lx = wx.rem_euclid(16) as u32;
-        let lz = wz.rem_euclid(16) as u32;
-
-        debug_assert!((0..16).contains(&lx));
-        debug_assert!((0..16).contains(&lz));
-        debug_assert!((-64..=319).contains(&y));
-
-        self.set_block_local(lx, y, lz, kind);
-    }
-
-    #[must_use]
-    pub fn get_block_world(&self, wx: i32, y: i32, wz: i32) -> PaletteBlockKind {
-        let lx = wx.rem_euclid(16) as u32;
-        let lz = wz.rem_euclid(16) as u32;
-
-        debug_assert!((0..16).contains(&lx));
-        debug_assert!((0..16).contains(&lz));
-        debug_assert!((-64..=319).contains(&y));
-
-        self.get_block_local(lx, y, lz)
     }
 
     pub fn encode(&self) -> anyhow::Result<PacketBytes> {
