@@ -116,8 +116,8 @@ impl Chunk {
     }
 
     pub fn set_block_local(&mut self, lx: u32, y: i32, lz: u32, value: PaletteBlockKind) {
-        debug_assert!((0..=16).contains(&lx));
-        debug_assert!((0..=16).contains(&lz));
+        debug_assert!((0..16).contains(&lx));
+        debug_assert!((0..16).contains(&lz));
         debug_assert!((-64..=319).contains(&y));
 
         let cy = y + Self::get_height_difference();
@@ -129,8 +129,8 @@ impl Chunk {
 
     #[must_use]
     pub fn get_block_local(&self, lx: u32, y: i32, lz: u32) -> PaletteBlockKind {
-        debug_assert!((0..=16).contains(&lx));
-        debug_assert!((0..=16).contains(&lz));
+        debug_assert!((0..16).contains(&lx));
+        debug_assert!((0..16).contains(&lz));
         debug_assert!((-64..=319).contains(&y));
 
         let cy = y + Self::get_height_difference();
@@ -144,8 +144,8 @@ impl Chunk {
         let lx = wx.rem_euclid(16) as u32;
         let lz = wz.rem_euclid(16) as u32;
 
-        debug_assert!((0..=16).contains(&lx));
-        debug_assert!((0..=16).contains(&lz));
+        debug_assert!((0..16).contains(&lx));
+        debug_assert!((0..16).contains(&lz));
         debug_assert!((-64..=319).contains(&y));
 
         self.set_block_local(lx, y, lz, kind);
@@ -156,8 +156,8 @@ impl Chunk {
         let lx = wx.rem_euclid(16) as u32;
         let lz = wz.rem_euclid(16) as u32;
 
-        debug_assert!((0..=16).contains(&lx));
-        debug_assert!((0..=16).contains(&lz));
+        debug_assert!((0..16).contains(&lx));
+        debug_assert!((0..16).contains(&lz));
         debug_assert!((-64..=319).contains(&y));
 
         self.get_block_local(lx, y, lz)

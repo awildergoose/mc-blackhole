@@ -1,7 +1,10 @@
 use cgmath::Vector3;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::world::level::{EntityId, Level, UPPPacket};
+use crate::{
+    net::handles::PacketWriterHandle,
+    world::level::{EntityId, Level},
+};
 
 pub enum WorldRequest {
     GetViewDistance {
@@ -10,8 +13,9 @@ pub enum WorldRequest {
     UpdatePlayerPosition {
         player: EntityId,
         position: Vector3<f64>,
-        upppacket_tx: mpsc::Sender<UPPPacket>,
+        packet_writer: PacketWriterHandle,
     },
+    Stop,
 }
 
 #[derive(Clone)]
@@ -34,21 +38,26 @@ impl WorldHandle {
         &self,
         player: EntityId,
         position: Vector3<f64>,
-        upppacket_tx: mpsc::Sender<UPPPacket>,
+        packet_writer: PacketWriterHandle,
     ) -> anyhow::Result<()> {
         self.tx
             .send(WorldRequest::UpdatePlayerPosition {
                 player,
                 position,
-                upppacket_tx,
+                packet_writer,
             })
             .await?;
+        Ok(())
+    }
+
+    pub async fn stop(&self) -> anyhow::Result<()> {
+        self.tx.send(WorldRequest::Stop).await?;
         Ok(())
     }
 }
 
 pub struct WorldWorker {
-    level: Level,
+    level: Option<Level>,
     rx: mpsc::Receiver<WorldRequest>,
 }
 
@@ -57,26 +66,45 @@ impl WorldWorker {
     pub fn new(level: Level) -> (Self, WorldHandle) {
         let (tx, rx) = mpsc::channel(256);
 
-        (Self { level, rx }, WorldHandle { tx })
+        (
+            Self {
+                level: Some(level),
+                rx,
+            },
+            WorldHandle { tx },
+        )
+    }
+
+    const fn level(&mut self) -> &mut Level {
+        self.level
+            .as_mut()
+            .expect("tried to get level post-closing channel?")
     }
 
     pub async fn run(mut self) -> anyhow::Result<()> {
         while let Some(request) = self.rx.recv().await {
             match request {
                 WorldRequest::GetViewDistance { respond } => {
-                    let _ = respond.send(self.level.view_distance);
+                    let _ = respond.send(self.level().view_distance);
                 }
                 WorldRequest::UpdatePlayerPosition {
                     player,
                     position,
-                    upppacket_tx,
+                    packet_writer,
                 } => {
-                    self.level
-                        .update_player_position(player, position, upppacket_tx)
+                    self.level()
+                        .update_player_position(player, position, packet_writer)
                         .await?;
+                }
+                WorldRequest::Stop => {
+                    println!("World received a stop signal, we're ending it!");
+                    break;
                 }
             }
         }
+
+        self.rx.close();
+        self.level = None;
 
         Ok(())
     }

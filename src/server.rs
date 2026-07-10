@@ -19,6 +19,6 @@ pub async fn run_server(addr: &str) -> anyhow::Result<()> {
 }
 
 async fn serve_conn(stream: tokio::net::TcpStream) -> anyhow::Result<()> {
-    let mut framed = FramedConn::new(stream);
-    handle_connection(&mut framed).await
+    let framed = FramedConn::new(stream);
+    handle_connection(framed).await
 }

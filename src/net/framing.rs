@@ -1,38 +1,32 @@
-use std::io::{Read, Write};
+use std::{
+    io::{Read, Write},
+    sync::{
+        Arc,
+        atomic::{AtomicI32, Ordering},
+    },
+};
 
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
+    net::tcp::{OwnedReadHalf, OwnedWriteHalf},
 };
 
 use crate::proto::{packet_bytes::PacketBytes, packets::Packet, varint::read_varint_from_stream};
 
-pub struct FramedConn {
-    stream: TcpStream,
-    compression_threshold: Option<i32>,
+const DISABLED: i32 = -1;
+
+pub struct FramedConnRead {
+    stream: OwnedReadHalf,
+    compression_threshold: Arc<AtomicI32>,
 }
 
-impl FramedConn {
-    pub const fn new(stream: TcpStream) -> Self {
-        Self {
-            stream,
-            compression_threshold: None,
-        }
-    }
+pub struct FramedConnWrite {
+    stream: OwnedWriteHalf,
+    compression_threshold: Arc<AtomicI32>,
+}
 
-    pub const fn enable_compression(&mut self, threshold: i32) {
-        self.compression_threshold = Some(threshold);
-    }
-
-    pub const fn disable_compression(&mut self) {
-        self.compression_threshold = None;
-    }
-
-    pub const fn is_compression_enabled(&self) -> bool {
-        self.compression_threshold.is_some()
-    }
-
+impl FramedConnRead {
     pub async fn read_packet(&mut self) -> anyhow::Result<(i32, PacketBytes)> {
         let len = read_varint_from_stream(&mut self.stream).await?;
         let mut buf = vec![0u8; len as usize];
@@ -40,7 +34,8 @@ impl FramedConn {
 
         let mut bytes = PacketBytes::from(&buf[..]);
 
-        if self.compression_threshold.is_some() {
+        let thr = self.compression_threshold.load(Ordering::Relaxed);
+        if thr != DISABLED {
             let data_len = bytes.get_var_int()?;
 
             if data_len != 0 {
@@ -55,6 +50,23 @@ impl FramedConn {
         let packet_id = bytes.get_var_int()?;
         Ok((packet_id, bytes))
     }
+}
+
+impl FramedConnWrite {
+    pub fn enable_compression(&self, threshold: i32) {
+        self.compression_threshold
+            .store(threshold, Ordering::Relaxed);
+    }
+
+    pub fn disable_compression(&self) {
+        self.compression_threshold
+            .store(DISABLED, Ordering::Relaxed);
+    }
+
+    #[must_use]
+    pub fn is_compression_enabled(&self) -> bool {
+        self.compression_threshold.load(Ordering::Relaxed) != DISABLED
+    }
 
     pub async fn write_pkt<T>(&mut self, pkt: T) -> anyhow::Result<()>
     where
@@ -68,43 +80,68 @@ impl FramedConn {
         packet_uncompressed.put_var_int(packet_id)?;
         packet_uncompressed.extend_from_slice(body);
 
-        // if compression is enabled
-        if let Some(threshold) = self.compression_threshold {
-            // if we cross the threshold to compress
-            if (packet_uncompressed.len() as i32) >= threshold {
-                // we compress the following
-                let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-                encoder.write_all(&packet_uncompressed)?;
-                let compressed = encoder.finish()?;
+        let thr = self.compression_threshold.load(Ordering::Relaxed);
 
-                let mut payload = PacketBytes::new();
-                payload.put_var_int(packet_uncompressed.len() as i32)?;
-                payload.extend_from_slice(&compressed);
-
-                let mut framed = PacketBytes::new();
-                framed.put_var_int(payload.len() as i32)?;
-                framed.extend_from_slice(&payload);
-                self.stream.write_all(&framed).await?;
-                Ok(())
-            } else {
-                // we don't compress anything
-                let mut payload = PacketBytes::new();
-                payload.put_var_int(0)?;
-                payload.extend_from_slice(&packet_uncompressed);
-
-                let mut framed = PacketBytes::new();
-                framed.put_var_int(payload.len() as i32)?;
-                framed.extend_from_slice(&payload);
-                self.stream.write_all(&framed).await?;
-                Ok(())
-            }
-        } else {
-            // compression is disabled, write the packet raw
+        if thr == DISABLED {
             let mut framed = PacketBytes::new();
             framed.put_var_int(packet_uncompressed.len() as i32)?;
             framed.extend_from_slice(&packet_uncompressed);
             self.stream.write_all(&framed).await?;
             Ok(())
+        } else if (packet_uncompressed.len() as i32) >= thr {
+            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(&packet_uncompressed)?;
+            let compressed = encoder.finish()?;
+
+            let mut payload = PacketBytes::new();
+            payload.put_var_int(packet_uncompressed.len() as i32)?;
+            payload.extend_from_slice(&compressed);
+
+            let mut framed = PacketBytes::new();
+            framed.put_var_int(payload.len() as i32)?;
+            framed.extend_from_slice(&payload);
+            self.stream.write_all(&framed).await?;
+            Ok(())
+        } else {
+            let mut payload = PacketBytes::new();
+            payload.put_var_int(0)?;
+            payload.extend_from_slice(&packet_uncompressed);
+
+            let mut framed = PacketBytes::new();
+            framed.put_var_int(payload.len() as i32)?;
+            framed.extend_from_slice(&payload);
+            self.stream.write_all(&framed).await?;
+            Ok(())
         }
+    }
+}
+
+pub struct FramedConn {
+    stream: tokio::net::TcpStream,
+    compression_threshold: Arc<AtomicI32>,
+}
+
+impl FramedConn {
+    pub fn new(stream: tokio::net::TcpStream) -> Self {
+        Self {
+            stream,
+            compression_threshold: Arc::new(AtomicI32::new(DISABLED)),
+        }
+    }
+
+    pub fn split(self) -> (FramedConnRead, FramedConnWrite) {
+        let (r, w) = self.stream.into_split();
+        let shared = self.compression_threshold;
+
+        (
+            FramedConnRead {
+                stream: r,
+                compression_threshold: shared.clone(),
+            },
+            FramedConnWrite {
+                stream: w,
+                compression_threshold: shared,
+            },
+        )
     }
 }

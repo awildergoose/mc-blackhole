@@ -105,7 +105,7 @@ pub fn do_chunk_generation(params: &mut ChunkGenerationParams) {
                     PaletteBlockKind::Bedrock
                 };
 
-                params.chunk.set_block_world(wx as i32, ly, wz as i32, kind);
+                params.chunk.set_block_local(lx as u32, ly, lz as u32, kind);
             }
         }
     }
@@ -188,9 +188,9 @@ pub fn do_chunk_generation(params: &mut ChunkGenerationParams) {
 
             pos += dir;
 
-            pos.x = pos.x.clamp(0, 16);
+            pos.x = pos.x.clamp(0, 15);
             pos.y = pos.y.clamp(0, 300);
-            pos.z = pos.z.clamp(0, 16);
+            pos.z = pos.z.clamp(0, 15);
         }
     }
 }

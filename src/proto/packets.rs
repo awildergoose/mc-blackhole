@@ -212,8 +212,8 @@ macro_rules! quickpkt {
 
 #[macro_export]
 macro_rules! expect_packet {
-    ($conn:expr, $name:tt) => {{
-        let (id, mut payload) = $conn.read_packet().await?;
+    ($rd:expr, $name:tt) => {{
+        let (id, mut payload) = $rd.read_packet().await?;
         if id == $name::ID {
             $name::decode(&mut payload)
         } else {

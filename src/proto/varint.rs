@@ -1,5 +1,5 @@
 use bytes::{BufMut, BytesMut};
-use tokio::{io::AsyncReadExt, net::TcpStream};
+use tokio::{io::AsyncReadExt, net::tcp::OwnedReadHalf};
 
 use crate::codecs::base::{MCDecode, MCEncode};
 
@@ -20,7 +20,7 @@ impl MCDecode for EncodedVarInt {
     }
 }
 
-pub async fn read_varint_from_stream(stream: &mut TcpStream) -> anyhow::Result<i32> {
+pub async fn read_varint_from_stream(stream: &mut OwnedReadHalf) -> anyhow::Result<i32> {
     let mut num_read = 0;
     let mut result: i32 = 0;
 

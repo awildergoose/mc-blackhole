@@ -9,13 +9,20 @@ use std::{
 use cgmath::{Vector2, Vector3};
 use noise::Perlin;
 use rand::{SeedableRng, rngs::StdRng};
-use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 
-use crate::world::{
-    chunk::{Chunk, determine_chunk_seed},
-    chunk_gen::{ChunkGenerationParams, do_chunk_generation},
-    entity::{Entity, PlayerEntity},
-    palette::PaletteBlockKind,
+use crate::{
+    net::handles::PacketWriterHandle,
+    proto::packets::play::{
+        sc_chunk_batch_finished::ScChunkBatchFinished, sc_chunk_batch_start::ScChunkBatchStart,
+        sc_level_chunk_with_light::ScLevelChunkWithLight, sc_set_center_chunk::ScSetCenterChunk,
+    },
+    world::{
+        chunk::{Chunk, determine_chunk_seed},
+        chunk_gen::{ChunkGenerationParams, do_chunk_generation},
+        entity::{Entity, PlayerEntity},
+        palette::PaletteBlockKind,
+    },
 };
 
 pub type ChunkPos = Vector2<i32>;
@@ -27,12 +34,6 @@ pub struct Level {
     pub sent_chunks: Vec<ChunkPos>,
     pub seed: u64,
     pub view_distance: i32,
-}
-
-pub enum UPPPacket {
-    Begin(i32, i32),
-    Chunk(Chunk),
-    Finish(i32),
 }
 
 impl Level {
@@ -180,7 +181,7 @@ impl Level {
         &mut self,
         player: EntityId,
         position: Vector3<f64>,
-        upppacket_tx: mpsc::Sender<UPPPacket>,
+        writer: PacketWriterHandle,
     ) -> anyhow::Result<()> {
         self.with_entity_mut::<PlayerEntity, _, _>(player, |_, p| {
             p.update_position(position);
@@ -190,11 +191,12 @@ impl Level {
         let center_x = (position.x / 16.0).floor() as i32;
         let center_z = (position.z / 16.0).floor() as i32;
 
-        let (chunks_tx, mut chunks_rx) = mpsc::unbounded_channel();
-        let mut handles = vec![];
+        let mut join = JoinSet::new();
 
         let radius = self.view_distance;
         let chunk_count = AtomicI32::new(0);
+
+        println!("updating player position");
 
         for cx in -radius..=radius {
             for cz in -radius..=radius {
@@ -202,75 +204,70 @@ impl Level {
                 let nz = center_z + cz;
                 let pos = Vector2::new(nx, nz);
 
-                if self.can_send_chunk(pos) {
-                    if !has_sent_chunks {
-                        upppacket_tx
-                            .send(UPPPacket::Begin(center_x, center_z))
-                            .await?;
-                        has_sent_chunks = true;
-                    }
-
-                    let chunks_tx_2 = chunks_tx.clone();
-
-                    if let Some(entry) = self.chunks.get(&pos) {
-                        // Yikes
-                        let chunk = entry.clone();
-
-                        handles.push(tokio::spawn(async move {
-                            let _ = chunks_tx_2.send((pos, chunk, false));
-                            Ok::<(), anyhow::Error>(())
-                        }));
-                    } else {
-                        let chunks_tx = chunks_tx.clone();
-                        let seed = self.seed;
-
-                        handles.push(tokio::spawn(async move {
-                            let mut chunk = Chunk::new(pos.x, pos.y);
-
-                            let mut rng =
-                                StdRng::seed_from_u64(determine_chunk_seed(seed, pos.x, pos.y));
-
-                            let mut noise = Perlin::new(seed as u32);
-
-                            let mut params = ChunkGenerationParams {
-                                cx: pos.x,
-                                cz: pos.y,
-                                chunk: &mut chunk,
-                                random: &mut rng,
-                                noise: &mut noise,
-                            };
-
-                            do_chunk_generation(&mut params);
-
-                            chunks_tx.send((pos, chunk, true))?;
-                            Ok(())
-                        }));
-                    }
-
-                    chunk_count.fetch_add(1, Ordering::SeqCst);
+                if !self.can_send_chunk(pos) {
+                    continue;
                 }
+
+                if !has_sent_chunks {
+                    let _ = writer
+                        .write_pkt(ScSetCenterChunk::new(center_x, center_z))
+                        .await;
+                    let _ = writer.write_pkt(ScChunkBatchStart::new()).await;
+                    has_sent_chunks = true;
+                }
+
+                if let Some(entry) = self.chunks.get(&pos) {
+                    let chunk = entry.clone();
+                    join.spawn(async move { Ok::<_, anyhow::Error>((pos, chunk, false)) });
+                } else {
+                    let seed = self.seed;
+                    join.spawn(async move {
+                        let mut chunk = Chunk::new(pos.x, pos.y);
+                        let mut rng =
+                            StdRng::seed_from_u64(determine_chunk_seed(seed, pos.x, pos.y));
+                        let mut noise = Perlin::new(seed as u32);
+                        let mut params = ChunkGenerationParams {
+                            cx: pos.x,
+                            cz: pos.y,
+                            chunk: &mut chunk,
+                            random: &mut rng,
+                            noise: &mut noise,
+                        };
+                        do_chunk_generation(&mut params);
+                        Ok::<_, anyhow::Error>((pos, chunk, true))
+                    });
+                }
+
+                chunk_count.fetch_add(1, Ordering::SeqCst);
             }
         }
 
-        for handle in handles {
-            handle.await??;
-        }
+        while let Some(res) = join.join_next().await {
+            let (pos, chunk, insert) = res??;
 
-        chunks_rx.close();
-
-        // TODO: don't clone
-        while let Some((pos, chunk, insert)) = chunks_rx.recv().await {
-            upppacket_tx.send(UPPPacket::Chunk(chunk.clone())).await?;
+            if writer
+                .write_pkt(ScLevelChunkWithLight::new(chunk.encode()?))
+                .await
+                .is_err()
+            {
+                return Ok(());
+            }
 
             if insert {
                 self.chunks.insert(pos, chunk);
             }
         }
 
+        println!("finished receiving chunks");
+
         if has_sent_chunks {
-            upppacket_tx
-                .send(UPPPacket::Finish(chunk_count.load(Ordering::SeqCst)))
-                .await?;
+            println!("sending finish");
+            let _ = writer
+                .write_pkt(ScChunkBatchFinished::new(
+                    chunk_count.load(Ordering::SeqCst),
+                ))
+                .await;
+            println!("sent finish");
         }
 
         let player_chunk = Vector2::new(
@@ -292,6 +289,18 @@ impl Level {
             dx.abs() <= radius && dz.abs() <= radius
         });
 
+        println!("removed unused chunks");
+
         Ok(())
+    }
+}
+
+impl Drop for Level {
+    fn drop(&mut self) {
+        eprintln!(
+            "Dropping Level: chunks={}, sent_chunks={}",
+            self.chunks.len(),
+            self.sent_chunks.len()
+        );
     }
 }
