@@ -107,7 +107,8 @@ impl Entity for PlayerEntity {
                 dx * dx + dz * dz
             });
 
-            let ticks_to_fill = 20 * 5;
+            // 20 TPS over 2 seconds, decrease this to make more chunks be queued at once
+            let ticks_to_fill = 20 * 2;
             let chunks_per_tick = ((std::f64::consts::PI * f64::from(radius) * f64::from(radius))
                 / f64::from(ticks_to_fill))
             .ceil() as usize;
