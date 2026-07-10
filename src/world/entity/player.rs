@@ -188,6 +188,8 @@ impl Entity for PlayerEntity {
             );
 
             // unload far away chunks
+            // TODO: add a little margin so it doesn't unload chunks at chunk
+            // borders, and then it reloads them, which would be inefficient
             self.sent_chunks.retain(|chunk| {
                 let dx = chunk.x - player_chunk.x;
                 let dz = chunk.y - player_chunk.y;
