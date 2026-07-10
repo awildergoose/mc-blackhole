@@ -1,7 +1,4 @@
-use std::{
-    any::Any,
-    sync::atomic::{AtomicI32, Ordering},
-};
+use std::{any::Any, collections::HashSet};
 
 use cgmath::{Vector2, Vector3};
 use tokio::task::JoinSet;
@@ -23,7 +20,7 @@ pub struct PlayerEntity {
     base: EntityBase,
     position: Vector3<f64>,
     packet_writer: PacketWriterHandle,
-    sent_chunks: Vec<ChunkPos>,
+    sent_chunks: HashSet<ChunkPos>,
 }
 
 impl PlayerEntity {
@@ -33,7 +30,7 @@ impl PlayerEntity {
             base: EntityBase::default(),
             position: Vector3::new(0.0, 0.0, 0.0),
             packet_writer,
-            sent_chunks: Vec::new(),
+            sent_chunks: HashSet::new(),
         }
     }
 
@@ -47,12 +44,7 @@ impl PlayerEntity {
     }
 
     pub fn can_send_chunk(&mut self, pos: ChunkPos) -> bool {
-        if !self.sent_chunks.contains(&pos) {
-            self.sent_chunks.push(pos);
-            return true;
-        }
-
-        false
+        self.sent_chunks.insert(pos)
     }
 }
 
@@ -77,45 +69,57 @@ impl Entity for PlayerEntity {
 
             let mut join = JoinSet::new();
 
-            // TODO: gradually do this in other ticks
+            // TODO: gradually generate chunks in other ticks,
+            // aka, in this tick, load N amount of chunks,
+            // next tick, check again, load N amount of chunks
+            // so if the player is moving fast, we unload (or don't at all load)
+            // farther chunks, and don't have to even generate them!
             let radius = level.view_distance;
-            let chunk_count = AtomicI32::new(0);
+            let mut chunk_count = 0;
 
-            for cx in -radius..=radius {
-                for cz in -radius..=radius {
-                    let nx = center_x + cx;
-                    let nz = center_z + cz;
-                    let pos = Vector2::new(nx, nz);
+            let mut positions = Vec::new();
 
-                    if !self.can_send_chunk(pos) {
-                        continue;
-                    }
-
-                    if !has_sent_chunks {
-                        let _ = self
-                            .packet_writer
-                            .write_pkt(ScSetCenterChunk::new(center_x, center_z))
-                            .await;
-                        let _ = self.packet_writer.write_pkt(ScChunkBatchStart::new()).await;
-                        has_sent_chunks = true;
-                    }
-
-                    if level.chunks.contains_key(&pos) {
-                        join.spawn(async move { Ok::<_, anyhow::Error>((pos, None)) });
-                    } else {
-                        let seed = level.seed;
-                        let patches = level.patches.get(&pos).cloned().unwrap_or_default();
-
-                        join.spawn(async move {
-                            Ok::<_, anyhow::Error>((
-                                pos,
-                                Some(Level::generate_chunk(seed, pos, patches)),
-                            ))
-                        });
-                    }
-
-                    chunk_count.fetch_add(1, Ordering::SeqCst);
+            for x in -radius..=radius {
+                for z in -radius..=radius {
+                    positions.push(Vector2::new(center_x + x, center_z + z));
                 }
+            }
+
+            positions.sort_by_key(|p| {
+                let dx = p.x - center_x;
+                let dz = p.y - center_z;
+                dx * dx + dz * dz
+            });
+
+            for pos in positions {
+                if !self.can_send_chunk(pos) {
+                    continue;
+                }
+
+                if !has_sent_chunks {
+                    let _ = self
+                        .packet_writer
+                        .write_pkt(ScSetCenterChunk::new(center_x, center_z))
+                        .await;
+                    let _ = self.packet_writer.write_pkt(ScChunkBatchStart::new()).await;
+                    has_sent_chunks = true;
+                }
+
+                if level.chunks.contains_key(&pos) {
+                    join.spawn_blocking(move || Ok::<_, anyhow::Error>((pos, None)));
+                } else {
+                    let seed = level.seed;
+                    let patches = level.patches.get(&pos).cloned().unwrap_or_default();
+
+                    join.spawn_blocking(move || {
+                        Ok::<_, anyhow::Error>((
+                            pos,
+                            Some(Level::generate_chunk(seed, pos, patches)),
+                        ))
+                    });
+                }
+
+                chunk_count += 1;
             }
 
             while let Some(res) = join.join_next().await {
@@ -151,9 +155,7 @@ impl Entity for PlayerEntity {
             if has_sent_chunks {
                 let _ = self
                     .packet_writer
-                    .write_pkt(ScChunkBatchFinished::new(
-                        chunk_count.load(Ordering::SeqCst),
-                    ))
+                    .write_pkt(ScChunkBatchFinished::new(chunk_count))
                     .await;
             }
 
