@@ -6,7 +6,6 @@ use crate::{
 };
 use strum::IntoEnumIterator;
 
-#[derive(Clone)]
 struct Section {
     data: Vec<u64>,
 
@@ -87,7 +86,6 @@ pub fn determine_chunk_seed(world_seed: u64, cx: i32, cz: i32) -> u64 {
     h.finish()
 }
 
-#[derive(Clone)]
 pub struct Chunk {
     sections: Vec<Section>,
     x: i32,

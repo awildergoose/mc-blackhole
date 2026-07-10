@@ -28,9 +28,39 @@ use crate::{
 pub type ChunkPos = Vector2<i32>;
 pub type EntityId = usize;
 
+pub struct BlockPatch {
+    pub x: u32,
+    pub y: i32,
+    pub z: u32,
+    pub kind: PaletteBlockKind,
+}
+
+impl BlockPatch {
+    #[must_use]
+    pub const fn new(pos: Vector3<i32>, kind: PaletteBlockKind) -> Self {
+        Self {
+            x: pos.x as u32,
+            y: pos.y,
+            z: pos.z as u32,
+            kind,
+        }
+    }
+
+    #[must_use]
+    pub const fn new2(x: u32, y: i32, z: u32, kind: PaletteBlockKind) -> Self {
+        Self { x, y, z, kind }
+    }
+
+    #[inline]
+    pub fn apply(&self, chunk: &mut Chunk) {
+        chunk.set_block_local(self.x, self.y, self.z, self.kind);
+    }
+}
+
 pub struct Level {
     pub entities: Vec<Mutex<Box<dyn Entity>>>,
     pub chunks: HashMap<ChunkPos, Chunk>,
+    pub patches: HashMap<ChunkPos, Vec<BlockPatch>>,
     pub sent_chunks: Vec<ChunkPos>,
     pub seed: u64,
     pub view_distance: i32,
@@ -44,6 +74,7 @@ impl Level {
         Self {
             entities: vec![],
             chunks: HashMap::new(),
+            patches: HashMap::new(),
             sent_chunks: vec![],
             seed,
             view_distance,
@@ -214,9 +245,8 @@ impl Level {
                     has_sent_chunks = true;
                 }
 
-                if let Some(entry) = self.chunks.get(&pos) {
-                    let chunk = entry.clone();
-                    join.spawn(async move { Ok::<_, anyhow::Error>((pos, chunk, false)) });
+                if self.chunks.contains_key(&pos) {
+                    join.spawn(async move { Ok::<_, anyhow::Error>((pos, None)) });
                 } else {
                     let seed = self.seed;
                     join.spawn(async move {
@@ -232,7 +262,7 @@ impl Level {
                             noise: &mut noise,
                         };
                         do_chunk_generation(&mut params);
-                        Ok::<_, anyhow::Error>((pos, chunk, true))
+                        Ok::<_, anyhow::Error>((pos, Some(chunk)))
                     });
                 }
 
@@ -241,18 +271,29 @@ impl Level {
         }
 
         while let Some(res) = join.join_next().await {
-            let (pos, chunk, insert) = res??;
+            let (pos, generated_chunk) = res??;
 
-            if writer
-                .write_pkt(ScLevelChunkWithLight::new(chunk.encode()?))
+            if let Some(chunk) = generated_chunk {
+                if writer
+                    .write_pkt(ScLevelChunkWithLight::new(chunk.encode()?))
+                    .await
+                    .is_err()
+                {
+                    return Ok(());
+                }
+
+                self.chunks.insert(pos, chunk);
+            } else if writer
+                .write_pkt(ScLevelChunkWithLight::new(
+                    self.chunks
+                        .get(&pos)
+                        .ok_or_else(|| anyhow::anyhow!("channel sent invalid chunk"))?
+                        .encode()?,
+                ))
                 .await
                 .is_err()
             {
                 return Ok(());
-            }
-
-            if insert {
-                self.chunks.insert(pos, chunk);
             }
         }
 
@@ -284,15 +325,5 @@ impl Level {
         });
 
         Ok(())
-    }
-}
-
-impl Drop for Level {
-    fn drop(&mut self) {
-        eprintln!(
-            "Dropping Level: chunks={}, sent_chunks={}",
-            self.chunks.len(),
-            self.sent_chunks.len()
-        );
     }
 }

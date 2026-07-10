@@ -97,7 +97,6 @@ impl WorldWorker {
                         .await?;
                 }
                 WorldRequest::Stop => {
-                    println!("World received a stop signal, we're ending it!");
                     break;
                 }
             }
