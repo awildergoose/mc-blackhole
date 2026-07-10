@@ -179,7 +179,7 @@ impl Level {
     }
 
     #[must_use]
-    const fn world_to_chunk_and_local(wx: i32, wz: i32) -> (i32, i32, u32, u32) {
+    pub const fn world_to_chunk_and_local(wx: i32, wz: i32) -> (i32, i32, u32, u32) {
         let cx = wx.div_euclid(16);
         let cz = wz.div_euclid(16);
 

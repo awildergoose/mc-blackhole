@@ -19,8 +19,10 @@ use crate::{
 pub struct PlayerEntity {
     base: EntityBase,
     position: Vector3<f64>,
-    packet_writer: PacketWriterHandle,
+    last_chunk: ChunkPos,
     sent_chunks: HashSet<ChunkPos>,
+    chunk_queue: Vec<ChunkPos>,
+    packet_writer: PacketWriterHandle,
 }
 
 impl PlayerEntity {
@@ -29,8 +31,10 @@ impl PlayerEntity {
         Self {
             base: EntityBase::default(),
             position: Vector3::new(0.0, 0.0, 0.0),
-            packet_writer,
+            last_chunk: Vector2::new(0, 0),
             sent_chunks: HashSet::new(),
+            chunk_queue: Vec::new(),
+            packet_writer,
         }
     }
 
@@ -43,8 +47,11 @@ impl PlayerEntity {
         self.position
     }
 
-    pub fn can_send_chunk(&mut self, pos: ChunkPos) -> bool {
-        self.sent_chunks.insert(pos)
+    #[must_use]
+    const fn get_chunk_position(&self) -> ChunkPos {
+        let (cx, cz, _, _) =
+            Level::world_to_chunk_and_local(self.position.x as i32, self.position.z as i32);
+        Vector2::new(cx, cz)
     }
 }
 
@@ -69,30 +76,31 @@ impl Entity for PlayerEntity {
 
             let mut join = JoinSet::new();
 
-            // TODO: gradually generate chunks in other ticks,
-            // aka, in this tick, load N amount of chunks,
-            // next tick, check again, load N amount of chunks
-            // so if the player is moving fast, we unload (or don't at all load)
-            // farther chunks, and don't have to even generate them!
             let radius = level.view_distance;
             let mut chunk_count = 0;
 
-            let mut positions = Vec::new();
+            if self.last_chunk != self.get_chunk_position() || self.chunk_queue.is_empty() {
+                let mut positions = Vec::new();
 
-            for x in -radius..=radius {
-                for z in -radius..=radius {
-                    positions.push(Vector2::new(center_x + x, center_z + z));
+                for x in -radius..=radius {
+                    for z in -radius..=radius {
+                        positions.push(Vector2::new(center_x + x, center_z + z));
+                    }
                 }
+
+                positions.sort_by_key(|p| {
+                    let dx = p.x - center_x;
+                    let dz = p.y - center_z;
+                    dx * dx + dz * dz
+                });
+
+                self.chunk_queue = positions;
+                self.last_chunk = self.get_chunk_position();
             }
 
-            positions.sort_by_key(|p| {
-                let dx = p.x - center_x;
-                let dz = p.y - center_z;
-                dx * dx + dz * dz
-            });
-
-            for pos in positions {
-                if !self.can_send_chunk(pos) {
+            // 5 chunks at a time
+            for pos in self.chunk_queue.drain(..self.chunk_queue.len().min(5)) {
+                if !self.sent_chunks.insert(pos) {
                     continue;
                 }
 
