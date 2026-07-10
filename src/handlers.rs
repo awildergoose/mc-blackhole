@@ -103,7 +103,7 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
         2.0,
         PaletteBlockKind::OakPlanks,
     );
-    level.set_block(0, 0, 0, PaletteBlockKind::Grass);
+    level.set_block_perma(0, 0, 0, PaletteBlockKind::Grass);
 
     let (worker, world) = WorldWorker::new(level);
     let _guard = StopWorldOnDrop(world.clone());

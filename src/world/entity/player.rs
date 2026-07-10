@@ -4,8 +4,6 @@ use std::{
 };
 
 use cgmath::{Vector2, Vector3};
-use noise::Perlin;
-use rand::{SeedableRng, rngs::StdRng};
 use tokio::task::JoinSet;
 
 use crate::{
@@ -16,8 +14,6 @@ use crate::{
         sc_level_chunk_with_light::ScLevelChunkWithLight, sc_set_center_chunk::ScSetCenterChunk,
     },
     world::{
-        chunk::{Chunk, determine_chunk_seed},
-        chunk_gen::{ChunkGenerationParams, do_chunk_generation},
         entity::{Entity, EntityBase},
         level::{ChunkPos, Level},
     },
@@ -108,20 +104,13 @@ impl Entity for PlayerEntity {
                         join.spawn(async move { Ok::<_, anyhow::Error>((pos, None)) });
                     } else {
                         let seed = level.seed;
+                        let patches = level.patches.get(&pos).cloned().unwrap_or_default();
+
                         join.spawn(async move {
-                            let mut chunk = Chunk::new(pos.x, pos.y);
-                            let mut rng =
-                                StdRng::seed_from_u64(determine_chunk_seed(seed, pos.x, pos.y));
-                            let mut noise = Perlin::new(seed as u32);
-                            let mut params = ChunkGenerationParams {
-                                cx: pos.x,
-                                cz: pos.y,
-                                chunk: &mut chunk,
-                                random: &mut rng,
-                                noise: &mut noise,
-                            };
-                            do_chunk_generation(&mut params);
-                            Ok::<_, anyhow::Error>((pos, Some(chunk)))
+                            Ok::<_, anyhow::Error>((
+                                pos,
+                                Some(Level::generate_chunk(seed, pos, patches)),
+                            ))
                         });
                     }
 

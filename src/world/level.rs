@@ -15,6 +15,7 @@ use crate::world::{
 pub type ChunkPos = Vector2<i32>;
 pub type EntityId = usize;
 
+#[derive(Debug, Clone, Copy)]
 pub struct BlockPatch {
     pub x: u32,
     pub y: i32,
@@ -95,11 +96,11 @@ impl Level {
         Some(f(self, entity))
     }
 
-    pub fn generate_chunk(&mut self, pos: ChunkPos) -> Chunk {
+    #[must_use]
+    pub fn generate_chunk(seed: u64, pos: ChunkPos, patches: Vec<BlockPatch>) -> Chunk {
         let mut chunk = Chunk::new(pos.x, pos.y);
-        let mut random = StdRng::seed_from_u64(determine_chunk_seed(self.seed, pos.x, pos.y));
-        let mut noise = Perlin::new(self.seed as u32);
-
+        let mut random = StdRng::seed_from_u64(determine_chunk_seed(seed, pos.x, pos.y));
+        let mut noise = Perlin::new(seed as u32);
         let mut params = ChunkGenerationParams {
             cx: pos.x,
             cz: pos.y,
@@ -110,7 +111,16 @@ impl Level {
 
         do_chunk_generation(&mut params);
 
+        for patch in patches {
+            patch.apply(&mut chunk);
+        }
+
         chunk
+    }
+
+    #[must_use]
+    pub fn is_chunk_loaded(&self, pos: ChunkPos) -> bool {
+        self.chunks.contains_key(&pos)
     }
 
     #[must_use]
@@ -118,7 +128,11 @@ impl Level {
     // This will *never* panic, I think, I hope.
     pub fn get_chunk(&mut self, pos: ChunkPos) -> &mut Chunk {
         if !self.chunks.contains_key(&pos) {
-            let chunk = self.generate_chunk(pos);
+            let chunk = Self::generate_chunk(
+                self.seed,
+                pos,
+                self.patches.get(&pos).cloned().unwrap_or_default(),
+            );
             self.chunks.insert(pos, chunk);
         }
 
@@ -164,15 +178,36 @@ impl Level {
         }
     }
 
-    pub fn set_block(&mut self, wx: i32, wy: i32, wz: i32, kind: PaletteBlockKind) {
+    #[must_use]
+    const fn world_to_chunk_and_local(wx: i32, wz: i32) -> (i32, i32, u32, u32) {
         let cx = wx.div_euclid(16);
         let cz = wz.div_euclid(16);
 
         let lx = wx.rem_euclid(16) as u32;
         let lz = wz.rem_euclid(16) as u32;
 
+        (cx, cz, lx, lz)
+    }
+
+    pub fn set_block(&mut self, wx: i32, wy: i32, wz: i32, kind: PaletteBlockKind) {
+        let (cx, cz, lx, lz) = Self::world_to_chunk_and_local(wx, wz);
+
         self.get_chunk(Vector2::new(cx, cz))
             .set_block_local(lx, wy, lz, kind);
+    }
+
+    pub fn set_block_perma(&mut self, wx: i32, wy: i32, wz: i32, kind: PaletteBlockKind) {
+        let (cx, cz, lx, lz) = Self::world_to_chunk_and_local(wx, wz);
+        let patch = BlockPatch::new2(lx, wy, lz, kind);
+        let cpos = Vector2::new(cx, cz);
+        self.patches
+            .entry(cpos)
+            .and_modify(|v| v.push(patch))
+            .or_insert_with(|| vec![patch]);
+
+        if self.is_chunk_loaded(cpos) {
+            self.set_block(wx, wy, wz, kind);
+        }
     }
 
     #[must_use]
