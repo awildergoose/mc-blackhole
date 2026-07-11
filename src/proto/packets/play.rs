@@ -58,6 +58,13 @@ create_enum!(PlayerActionFace, u8,
     PX => 5
 );
 
+create_enum_varint!(GameMode,
+    Survival => 0,
+    Creative => 1,
+    Adventure => 2,
+    Spectator => 3
+);
+
 quickpkt!(sc_keep_alive, 0x2B, rand => i64);
 quickpkt!(cs_keep_alive, 0x1B);
 quickpkt!(cs_client_tick_end, 0x0C);
@@ -110,9 +117,10 @@ quickpkt!(sc_player_position, 0x46,
 quickpkt!(sc_game_event, 0x26, event => Enum<GameEvent>, value => f32);
 quickpkt!(sc_entity_event, 0x22, entity_id => i32, status => Enum<EntityEvent>);
 quickpkt!(sc_player_abilities, 0x3E, flags => u8, flying_speed => f32, fov_modifier => f32);
+quickpkt!(cs_player_abilities, 0x27, flags => u8);
 
 quickpkt!(cs_player_action, 0x28, status => Enum<PlayerActionStatus>, location => Position, face => Enum<PlayerActionFace>, sequence => VarInt);
-quickpkt!(cs_change_game_mode, 0x04, game_mode => VarInt);
+quickpkt!(cs_change_game_mode, 0x04, game_mode => Enum<GameMode>);
 quickpkt!(cs_chat_command, 0x06, command => String);
 
 quickpkt!(sc_set_center_chunk, 0x5C, x => VarInt, z => VarInt);

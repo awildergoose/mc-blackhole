@@ -1,9 +1,12 @@
 use cgmath::Vector3;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::world::{
-    entity::player::PlayerEntity,
-    level::{EntityId, Level},
+use crate::{
+    proto::packets::play::GameMode,
+    world::{
+        entity::player::PlayerEntity,
+        level::{EntityId, Level},
+    },
 };
 
 pub enum WorldRequest {
@@ -14,10 +17,26 @@ pub enum WorldRequest {
         player: EntityId,
         respond: oneshot::Sender<Vector3<f64>>,
     },
+    GetPlayerFlying {
+        player: EntityId,
+        respond: oneshot::Sender<bool>,
+    },
+    GetPlayerGameMode {
+        player: EntityId,
+        respond: oneshot::Sender<GameMode>,
+    },
 
     UpdatePlayerPosition {
         player: EntityId,
         position: Vector3<f64>,
+    },
+    UpdatePlayerFlying {
+        player: EntityId,
+        is_flying: bool,
+    },
+    UpdatePlayerGameMode {
+        player: EntityId,
+        game_mode: GameMode,
     },
     AddMetaball {
         position: Vector3<i32>,
@@ -32,23 +51,39 @@ pub struct WorldHandle {
     tx: mpsc::Sender<WorldRequest>,
 }
 
-impl WorldHandle {
-    pub async fn get_view_distance(&self) -> anyhow::Result<i32> {
-        let (tx, rx) = oneshot::channel();
-        self.send(WorldRequest::GetViewDistance { respond: tx })
-            .await?;
-        Ok(rx.await?)
-    }
+macro_rules! makegetalias {
+    ($name:expr, $ret:ty, $($arg:expr => $argty:ty),*) => {
+        paste::paste! {
+            pub async fn [<$name:snake>](&self, $($arg: $argty),*) -> anyhow::Result<$ret> {
+                let (tx, rx) = oneshot::channel();
+                self.send(WorldRequest::$name {
+                    respond: tx,
+                    $($arg),*
+                })
+                    .await?;
+                Ok(rx.await?)
+            }
+        }
+    };
+    ($name:expr, $ret:ty) => {
+        paste::paste! {
+            pub async fn [<$name:snake>](&self) -> anyhow::Result<$ret> {
+                let (tx, rx) = oneshot::channel();
+                self.send(WorldRequest::$name {
+                    respond: tx,
+                })
+                    .await?;
+                Ok(rx.await?)
+            }
+        }
+    };
+}
 
-    pub async fn get_player_position(&self, player: EntityId) -> anyhow::Result<Vector3<f64>> {
-        let (tx, rx) = oneshot::channel();
-        self.send(WorldRequest::GetPlayerPosition {
-            player,
-            respond: tx,
-        })
-        .await?;
-        Ok(rx.await?)
-    }
+impl WorldHandle {
+    makegetalias!(GetViewDistance, i32);
+    makegetalias!(GetPlayerPosition, Vector3<f64>, player => usize);
+    makegetalias!(GetPlayerFlying, bool, player => usize);
+    makegetalias!(GetPlayerGameMode, GameMode, player => usize);
 
     pub async fn send(&self, request: WorldRequest) -> anyhow::Result<()> {
         self.tx.send(request).await?;
@@ -76,18 +111,51 @@ impl WorldWorker {
                     let _ = respond.send(self.level.view_distance);
                 }
                 WorldRequest::GetPlayerPosition { player, respond } => {
-                    let pos = self
-                        .level
-                        .with_entity::<PlayerEntity, _, _>(player, |_level, player| {
-                            player.get_position()
-                        })
-                        .await?;
-                    let _ = respond.send(pos);
+                    let _ = respond.send(
+                        self.level
+                            .with_entity::<PlayerEntity, _, _>(player, |_level, player| {
+                                player.position
+                            })
+                            .await?,
+                    );
                 }
+                WorldRequest::GetPlayerFlying { player, respond } => {
+                    let _ = respond.send(
+                        self.level
+                            .with_entity::<PlayerEntity, _, _>(player, |_level, player| {
+                                player.flying
+                            })
+                            .await?,
+                    );
+                }
+                WorldRequest::GetPlayerGameMode { player, respond } => {
+                    let _ = respond.send(
+                        self.level
+                            .with_entity::<PlayerEntity, _, _>(player, |_level, player| {
+                                player.game_mode
+                            })
+                            .await?,
+                    );
+                }
+
                 WorldRequest::UpdatePlayerPosition { player, position } => {
                     self.level
                         .with_entity_mut::<PlayerEntity, _, _>(player, |_, p| {
-                            p.update_position(position);
+                            p.position = position;
+                        })
+                        .await?;
+                }
+                WorldRequest::UpdatePlayerFlying { player, is_flying } => {
+                    self.level
+                        .with_entity_mut::<PlayerEntity, _, _>(player, |_, p| {
+                            p.flying = is_flying;
+                        })
+                        .await?;
+                }
+                WorldRequest::UpdatePlayerGameMode { player, game_mode } => {
+                    self.level
+                        .with_entity_mut::<PlayerEntity, _, _>(player, |_, p| {
+                            p.game_mode = game_mode;
                         })
                         .await?;
                 }

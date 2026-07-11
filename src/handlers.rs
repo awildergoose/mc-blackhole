@@ -1,18 +1,12 @@
 use std::{sync::Arc, time::Duration};
 
 use cgmath::Vector3;
-use tokio::{
-    runtime::Handle,
-    sync::{RwLock, mpsc},
-};
+use tokio::{runtime::Handle, sync::RwLock};
 
 use crate::{
     codecs::{base::MCDecode, game_profile::GameProfile},
     expect_packet,
-    net::{
-        framing::FramedConn,
-        handles::{PacketWriterChannel, PacketWriterHandle},
-    },
+    net::{framing::FramedConnRead, handles::PacketWriterHandle},
     proto::{
         packet_bytes::PacketBytes,
         packets::{
@@ -30,14 +24,15 @@ use crate::{
                 sc_login_success::ScLoginSuccess, sc_set_compression::ScSetCompression,
             },
             play::{
-                EntityEvent, GameEvent, cs_change_game_mode::CsChangeGameMode,
+                EntityEvent, GameEvent, GameMode, cs_change_game_mode::CsChangeGameMode,
                 cs_chat_command::CsChatCommand, cs_chunk_batch_received::CsChunkBatchReceived,
                 cs_client_tick_end::CsClientTickEnd, cs_keep_alive::CsKeepAlive,
                 cs_move_player_pos::CsMovePlayerPos, cs_move_player_pos_rot::CsMovePlayerPosRot,
                 cs_move_player_rot::CsMovePlayerRot, cs_ping_request::CsPingRequest,
-                cs_player_command::CsPlayerCommand, cs_player_input::CsPlayerInput,
-                cs_set_carried_item::CsSetCarriedItem, sc_entity_event::ScEntityEvent,
-                sc_game_event::ScGameEvent, sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
+                cs_player_abilities::CsPlayerAbilities, cs_player_command::CsPlayerCommand,
+                cs_player_input::CsPlayerInput, cs_set_carried_item::CsSetCarriedItem,
+                sc_entity_event::ScEntityEvent, sc_game_event::ScGameEvent,
+                sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
                 sc_player_abilities::ScPlayerAbilities, sc_player_position::ScPlayerPosition,
                 sc_plugin_message::ScPluginMessage, sc_set_center_chunk::ScSetCenterChunk,
             },
@@ -75,8 +70,10 @@ impl Drop for StopWorldOnDrop {
 }
 
 #[expect(clippy::too_many_lines)]
-pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
-    let (mut rd, mut wr) = conn.split();
+pub async fn handle_connection(
+    mut rd: FramedConnRead,
+    writer: PacketWriterHandle,
+) -> anyhow::Result<()> {
     let state = Arc::new(RwLock::new(ConnectionState::Handshaking));
     let intention = expect_packet!(rd, CsIntention)?;
     if intention.intent != 2 {
@@ -90,21 +87,12 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
     }
 
     let sc = ScSetCompression::new(256);
-    wr.write_pkt(sc.clone()).await?;
-    wr.enable_compression(sc.threshold);
+    writer.write_pkt(sc.clone()).await?;
+
+    writer.set_compression(sc.threshold).await?;
 
     let ls = ScLoginSuccess::new(GameProfile::new(login.uuid, login.username));
-    wr.write_pkt(ls.clone()).await?;
-
-    let (write_tx, mut write_rx) = mpsc::channel::<PacketWriterChannel>(32);
-    let writer = PacketWriterHandle::from(write_tx.clone());
-    let writer_handle = tokio::spawn(async move {
-        while let Some((packet_id, pkt)) = write_rx.recv().await {
-            wr.write_packet(packet_id, &pkt).await?;
-        }
-
-        Ok::<(), anyhow::Error>(())
-    });
+    writer.write_pkt(ls.clone()).await?;
 
     let mut client_tick = 0;
     let mut body;
@@ -365,6 +353,36 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                             continue;
                         }
 
+                        if id == CsPlayerAbilities::ID {
+                            let pkt = CsPlayerAbilities::decode(&mut data)?;
+                            let is_flying = pkt.flags == 0x02; // no other flags
+
+                            world
+                                .send(WorldRequest::UpdatePlayerFlying { player, is_flying })
+                                .await?;
+                            continue;
+                        }
+
+                        // change game mode
+                        #[expect(clippy::cast_precision_loss)]
+                        if id == CsChangeGameMode::ID {
+                            let pkt = CsChangeGameMode::decode(&mut data)?;
+
+                            writer
+                                .write_pkt(ScGameEvent::new(
+                                    GameEvent::ChangeGamemode,
+                                    pkt.game_mode as i32 as f32,
+                                ))
+                                .await?;
+                            world
+                                .send(WorldRequest::UpdatePlayerGameMode {
+                                    player,
+                                    game_mode: pkt.game_mode,
+                                })
+                                .await?;
+                            continue;
+                        }
+
                         // chunk batch received, set carried item
                         if id == CsMovePlayerRot::ID
                             || id == CsPlayerInput::ID
@@ -388,9 +406,22 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                                     .nth(1)
                                     .ok_or_else(|| anyhow::anyhow!("this should never happen"))?;
                                 let fly_speed = speed.parse()?;
+                                let game_mode = world.get_player_game_mode(player).await?;
+                                let flying = world.get_player_flying(player).await?;
+
+                                let mut flags = 0x00;
+
+                                if flying {
+                                    flags &= 0x02; // flying
+                                }
+
+                                if game_mode == GameMode::Creative {
+                                    flags &= 0x04; // allow flying
+                                    flags &= 0x08; // instant break
+                                }
 
                                 writer
-                                    .write_pkt(ScPlayerAbilities::new(0x04, fly_speed, 0.1))
+                                    .write_pkt(ScPlayerAbilities::new(flags, fly_speed, 0.1))
                                     .await?;
                                 continue;
                             }
@@ -489,20 +520,6 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                             continue;
                         }
 
-                        // change game mode
-                        #[expect(clippy::cast_precision_loss)]
-                        if id == CsChangeGameMode::ID {
-                            let pkt = CsChangeGameMode::decode(&mut data)?;
-
-                            writer
-                                .write_pkt(ScGameEvent::new(
-                                    GameEvent::ChangeGamemode,
-                                    pkt.game_mode as f32,
-                                ))
-                                .await?;
-                            continue;
-                        }
-
                         println!("play received packet id {id:X}");
                     }
                     _ => unreachable!(),
@@ -517,7 +534,6 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
 
     world.send(WorldRequest::Stop).await?;
     handle.await?;
-    writer_handle.abort();
     ticker_handle.abort();
 
     Ok(())

@@ -111,8 +111,8 @@ pub fn do_chunk_generation(params: &mut ChunkGenerationParams) {
     // Second: Caves
     let cave_noise = Perlin::new(noise.seed() + 2000);
     let cave_scale = 0.05;
-    let cave_amp_y = 5000.0;
-    let cave_octaves = 1;
+    let cave_amp_y = 15.0;
+    let cave_octaves = 2;
 
     for lx in 0..16 {
         for lz in 0..16 {
@@ -123,14 +123,13 @@ pub fn do_chunk_generation(params: &mut ChunkGenerationParams) {
             let pz = wz * cave_scale;
 
             let n = fbm2d(&cave_noise, px, pz, cave_octaves);
-            let v = n * cave_amp_y;
+            let v = (n * cave_amp_y) - 32.0;
 
-            if v.abs() >= 1500.0 {
-                let h = v.clamp(0.0, 300.0);
-                let y = h.round_ties_even() as i32;
+            if (-32.0..=15.0).contains(&v) {
+                let y = v.round_ties_even() as i32;
 
-                carve_sphere(lx, y, lz, 3, |x, y, z| {
-                    if !(0..16).contains(&x) || !(0..16).contains(&z) {
+                carve_sphere(lx, y, lz, 2, |x, y, z| {
+                    if !(0..16).contains(&x) || !(-64..300).contains(&y) || !(0..16).contains(&z) {
                         return;
                     }
                     params

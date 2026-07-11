@@ -7,8 +7,9 @@ use crate::{
     AsyncTraitFn, async_trait_fn,
     net::handles::PacketWriterHandle,
     proto::packets::play::{
-        sc_chunk_batch_finished::ScChunkBatchFinished, sc_chunk_batch_start::ScChunkBatchStart,
-        sc_level_chunk_with_light::ScLevelChunkWithLight, sc_set_center_chunk::ScSetCenterChunk,
+        GameMode, sc_chunk_batch_finished::ScChunkBatchFinished,
+        sc_chunk_batch_start::ScChunkBatchStart, sc_level_chunk_with_light::ScLevelChunkWithLight,
+        sc_set_center_chunk::ScSetCenterChunk,
     },
     world::{
         entity::{Entity, EntityBase},
@@ -18,10 +19,12 @@ use crate::{
 
 pub struct PlayerEntity {
     base: EntityBase,
-    position: Vector3<f64>,
+    pub position: Vector3<f64>,
     sent_chunks: HashSet<ChunkPos>,
     chunk_queue: Vec<ChunkPos>,
     pub packet_writer: PacketWriterHandle,
+    pub flying: bool,
+    pub game_mode: GameMode,
 }
 
 impl PlayerEntity {
@@ -33,16 +36,9 @@ impl PlayerEntity {
             sent_chunks: HashSet::new(),
             chunk_queue: Vec::new(),
             packet_writer,
+            flying: false,
+            game_mode: GameMode::Survival,
         }
-    }
-
-    pub const fn update_position(&mut self, position: Vector3<f64>) {
-        self.position = position;
-    }
-
-    #[must_use]
-    pub const fn get_position(&self) -> Vector3<f64> {
-        self.position
     }
 
     #[must_use]

@@ -53,14 +53,9 @@ impl FramedConnRead {
 }
 
 impl FramedConnWrite {
-    pub fn enable_compression(&self, threshold: i32) {
+    pub fn set_compression(&self, threshold: i32) {
         self.compression_threshold
             .store(threshold, Ordering::Relaxed);
-    }
-
-    pub fn disable_compression(&self) {
-        self.compression_threshold
-            .store(DISABLED, Ordering::Relaxed);
     }
 
     #[must_use]

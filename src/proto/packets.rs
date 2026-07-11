@@ -22,7 +22,7 @@ pub trait Packet: MCEncode + MCDecode {
 macro_rules! create_enum {
     ($name:tt, $ftype:ty, $($tname:ty => $tvalue:tt),*) => {
         paste::paste! {
-            #[derive(Clone, Debug)]
+            #[derive(Copy, Clone, Debug, PartialEq, Eq)]
             #[repr($ftype)]
             pub enum $name {
                 $(
@@ -60,7 +60,7 @@ macro_rules! create_enum {
 macro_rules! create_enum_varint {
     ($name:tt, $($tname:ty => $tvalue:tt),*) => {
         paste::paste! {
-            #[derive(Clone, Debug)]
+            #[derive(Copy, Clone, Debug, PartialEq, Eq)]
             #[repr(i32)]
             pub enum $name {
                 $(
