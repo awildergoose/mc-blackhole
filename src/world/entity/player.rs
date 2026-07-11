@@ -47,7 +47,7 @@ impl PlayerEntity {
 
     #[must_use]
     const fn get_chunk_position(&self) -> ChunkPos {
-        let (cx, cz, _, _) = Level::world_to_chunk_and_local(
+        let (cx, cz) = Level::world_to_chunk(
             self.position.x.floor() as i32,
             self.position.z.floor() as i32,
         );

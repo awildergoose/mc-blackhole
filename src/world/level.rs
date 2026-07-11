@@ -21,27 +21,50 @@ pub struct BlockPatch {
     pub y: i32,
     pub z: u32,
     pub kind: PaletteBlockKind,
+    pub original: PaletteBlockKind,
 }
 
 impl BlockPatch {
     #[must_use]
-    pub const fn new(pos: Vector3<i32>, kind: PaletteBlockKind) -> Self {
+    pub const fn new(
+        pos: Vector3<i32>,
+        kind: PaletteBlockKind,
+        original: PaletteBlockKind,
+    ) -> Self {
         Self {
             x: pos.x as u32,
             y: pos.y,
             z: pos.z as u32,
             kind,
+            original,
         }
     }
 
     #[must_use]
-    pub const fn new2(x: u32, y: i32, z: u32, kind: PaletteBlockKind) -> Self {
-        Self { x, y, z, kind }
+    pub const fn new2(
+        x: u32,
+        y: i32,
+        z: u32,
+        kind: PaletteBlockKind,
+        original: PaletteBlockKind,
+    ) -> Self {
+        Self {
+            x,
+            y,
+            z,
+            kind,
+            original,
+        }
     }
 
     #[inline]
     pub fn apply(&self, chunk: &mut Chunk) {
         chunk.set_block_local(self.x, self.y, self.z, self.kind);
+    }
+
+    #[inline]
+    pub fn unapply(&self, chunk: &mut Chunk) {
+        chunk.set_block_local(self.x, self.y, self.z, self.original);
     }
 }
 
@@ -189,6 +212,22 @@ impl Level {
         (cx, cz, lx, lz)
     }
 
+    #[must_use]
+    pub const fn world_to_chunk_local(wx: i32, wz: i32) -> (u32, u32) {
+        let lx = wx.rem_euclid(16) as u32;
+        let lz = wz.rem_euclid(16) as u32;
+
+        (lx, lz)
+    }
+
+    #[must_use]
+    pub const fn world_to_chunk(wx: i32, wz: i32) -> (i32, i32) {
+        let cx = wx.div_euclid(16);
+        let cz = wz.div_euclid(16);
+
+        (cx, cz)
+    }
+
     pub fn set_block(&mut self, wx: i32, wy: i32, wz: i32, kind: PaletteBlockKind) {
         let (cx, cz, lx, lz) = Self::world_to_chunk_and_local(wx, wz);
 
@@ -196,15 +235,34 @@ impl Level {
             .set_block_local(lx, wy, lz, kind);
     }
 
-    pub fn set_block_perma(&mut self, wx: i32, wy: i32, wz: i32, kind: PaletteBlockKind) {
+    fn make_block_patch(
+        &mut self,
+        wx: i32,
+        wy: i32,
+        wz: i32,
+        kind: PaletteBlockKind,
+    ) -> BlockPatch {
         let (cx, cz, lx, lz) = Self::world_to_chunk_and_local(wx, wz);
-        let patch = BlockPatch::new2(lx, wy, lz, kind);
+
+        BlockPatch::new2(
+            lx,
+            wy,
+            lz,
+            kind,
+            self.get_chunk(Vector2::new(cx, cz))
+                .get_block_local(lx, wy, lz),
+        )
+    }
+
+    pub fn set_block_perma(&mut self, wx: i32, wy: i32, wz: i32, kind: PaletteBlockKind) {
+        let patch = self.make_block_patch(wx, wy, wz, kind);
+        let (cx, cz) = Self::world_to_chunk(wx, wz);
         let cpos = Vector2::new(cx, cz);
+
         self.patches
             .entry(cpos)
             .and_modify(|v| v.push(patch))
             .or_insert_with(|| vec![patch]);
-
         if self.is_chunk_loaded(cpos) {
             self.set_block(wx, wy, wz, kind);
         }
