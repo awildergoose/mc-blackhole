@@ -378,15 +378,4 @@ impl Level {
         self.tick_counter += 1;
         Ok(())
     }
-
-    pub async fn update_player_position(
-        &mut self,
-        player: EntityId,
-        position: Vector3<f64>,
-    ) -> anyhow::Result<()> {
-        self.with_entity_mut::<PlayerEntity, _, _>(player, |_, p| {
-            p.update_position(position);
-        })
-        .await
-    }
 }

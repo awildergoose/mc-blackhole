@@ -84,7 +84,11 @@ impl WorldWorker {
                     let _ = respond.send(pos);
                 }
                 WorldRequest::UpdatePlayerPosition { player, position } => {
-                    self.level.update_player_position(player, position).await?;
+                    self.level
+                        .with_entity_mut::<PlayerEntity, _, _>(player, |_, p| {
+                            p.update_position(position);
+                        })
+                        .await?;
                 }
                 WorldRequest::AddMetaball { position } => {
                     self.level
