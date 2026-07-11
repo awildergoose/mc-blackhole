@@ -117,6 +117,7 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
             8.0,
             2.0,
             PaletteBlockKind::OakPlanks,
+            false,
         )
         .await?;
     level
@@ -451,7 +452,29 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                                     position.y as i32,
                                     position.z as i32,
                                 );
-                                world.send(WorldRequest::AddMetaball { position }).await?;
+                                world
+                                    .send(WorldRequest::AddMetaball {
+                                        position,
+                                        perma: false,
+                                    })
+                                    .await?;
+                                continue;
+                            }
+
+                            if command == "metaballp" {
+                                let mut position = world.get_player_position(player).await?;
+                                position += Vector3::new(0.0, 15.0, 0.0);
+                                let position = Vector3::new(
+                                    position.x as i32,
+                                    position.y as i32,
+                                    position.z as i32,
+                                );
+                                world
+                                    .send(WorldRequest::AddMetaball {
+                                        position,
+                                        perma: true,
+                                    })
+                                    .await?;
                                 continue;
                             }
 

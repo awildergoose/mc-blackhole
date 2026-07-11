@@ -38,6 +38,25 @@ create_enum!(EntityEvent, u8,
     SetOpPermissionLevel3 => 27,
     SetOpPermissionLevel4 => 28
 );
+create_enum_varint!(PlayerActionStatus,
+    StartedDigging => 0,
+    CancelledDigging => 1,
+    FinishedDigging => 2,
+    DropItemStack => 3,
+    DropItem => 4,
+    ShootArrow => 5,
+    SwapItemInHand => 6
+);
+
+// N == negative, P == positive
+create_enum!(PlayerActionFace, u8,
+    NY => 0,
+    PY => 1,
+    NZ => 2,
+    PZ => 3,
+    NX => 4,
+    PX => 5
+);
 
 quickpkt!(sc_keep_alive, 0x2B, rand => i64);
 quickpkt!(cs_keep_alive, 0x1B);
@@ -89,10 +108,10 @@ quickpkt!(sc_player_position, 0x46,
 );
 
 quickpkt!(sc_game_event, 0x26, event => Enum<GameEvent>, value => f32);
-
 quickpkt!(sc_entity_event, 0x22, entity_id => i32, status => Enum<EntityEvent>);
-
 quickpkt!(sc_player_abilities, 0x3E, flags => u8, flying_speed => f32, fov_modifier => f32);
+
+quickpkt!(cs_player_action, 0x28, status => Enum<PlayerActionStatus>, location => Position, face => Enum<PlayerActionFace>, sequence => VarInt);
 quickpkt!(cs_change_game_mode, 0x04, game_mode => VarInt);
 quickpkt!(cs_chat_command, 0x06, command => String);
 

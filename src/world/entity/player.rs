@@ -89,8 +89,10 @@ impl Entity for PlayerEntity {
             let player_chunk = self.get_chunk_position();
 
             self.chunk_queue.retain(|pos| {
-                let dx = pos.x - player_chunk.x;
-                let dz = pos.y - player_chunk.y;
+                // prevent overflow crashes earlier by converting to i64
+                let dx = i64::from(pos.x - player_chunk.x);
+                let dz = i64::from(pos.y - player_chunk.y);
+                let radius = i64::from(radius);
 
                 dx * dx + dz * dz <= radius * radius
             });

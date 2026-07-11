@@ -21,6 +21,7 @@ pub enum WorldRequest {
     },
     AddMetaball {
         position: Vector3<i32>,
+        perma: bool,
     },
     Stop,
     Tick,
@@ -90,13 +91,14 @@ impl WorldWorker {
                         })
                         .await?;
                 }
-                WorldRequest::AddMetaball { position } => {
+                WorldRequest::AddMetaball { position, perma } => {
                     self.level
                         .add_metaball(
                             position,
                             2.0,
                             2.0,
                             super::palette::PaletteBlockKind::OakPlanks,
+                            perma,
                         )
                         .await?;
                 }

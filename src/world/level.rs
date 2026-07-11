@@ -205,6 +205,7 @@ impl Level {
         radius: f32,
         iso: f32,
         kind: PaletteBlockKind,
+        perma: bool,
     ) -> anyhow::Result<()> {
         let r2 = radius * radius;
         let eps = 1e-4f32;
@@ -230,7 +231,11 @@ impl Level {
                     let f = r2 / (d2 + eps);
 
                     if f >= iso {
-                        self.set_block(wx, wy, wz, kind).await?;
+                        if perma {
+                            self.set_block_perma(wx, wy, wz, kind).await?;
+                        } else {
+                            self.set_block(wx, wy, wz, kind).await?;
+                        }
                     }
                 }
             }
