@@ -117,7 +117,7 @@ pub async fn handle_connection(
 
     let handle = tokio::spawn(async move {
         if let Err(e) = worker.run().await {
-            eprintln!("world worker panicked: {e:?}");
+            eprintln!("world worker error: {e:?}");
         }
     });
 
@@ -132,8 +132,7 @@ pub async fn handle_connection(
             if *ticker_state.read().await != ConnectionState::Play {
                 continue;
             }
-            if let Err(e) = ticker_world.send(WorldRequest::Tick).await {
-                eprintln!("failed to tick world: {e:?}");
+            if ticker_world.send(WorldRequest::Tick).await.is_err() {
                 break;
             }
         }
@@ -411,13 +410,14 @@ pub async fn handle_connection(
 
                                 let mut flags = 0x00;
 
-                                if flying {
-                                    flags |= 0x02; // flying
-                                }
-
                                 if game_mode == GameMode::Creative {
+                                    flags |= 0x01; // invulnerable
                                     flags |= 0x04; // allow flying
                                     flags |= 0x08; // instant break
+                                }
+
+                                if flying {
+                                    flags |= 0x02; // flying
                                 }
 
                                 writer
