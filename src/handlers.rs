@@ -13,7 +13,9 @@ use crate::{
             Packet,
             config::{
                 KnownPack, cs_client_information::CsClientInformation,
+                cs_config_custom_payload::CsConfigCustomPayload,
                 cs_finish_configuration::CsFinishConfiguration,
+                cs_select_known_packs::CsSelectKnownPacks,
                 sc_finish_configuration::ScFinishConfiguration, sc_registries::ScRegistries,
                 sc_select_known_packs::ScSelectKnownPacks, sc_tags::ScTags,
                 sc_update_enabled_features::ScUpdateEnabledFeatures,
@@ -25,14 +27,17 @@ use crate::{
             },
             play::{
                 ByteGameMode, EntityEvent, GameEvent, GameMode,
+                cs_accept_teleportation::CsAcceptTeleportation,
                 cs_change_game_mode::CsChangeGameMode, cs_chat_command::CsChatCommand,
                 cs_chunk_batch_received::CsChunkBatchReceived, cs_client_tick_end::CsClientTickEnd,
-                cs_keep_alive::CsKeepAlive, cs_move_player_pos::CsMovePlayerPos,
-                cs_move_player_pos_rot::CsMovePlayerPosRot, cs_move_player_rot::CsMovePlayerRot,
-                cs_ping_request::CsPingRequest, cs_player_abilities::CsPlayerAbilities,
+                cs_custom_payload::CsCustomPayload, cs_keep_alive::CsKeepAlive,
+                cs_move_player_pos::CsMovePlayerPos, cs_move_player_pos_rot::CsMovePlayerPosRot,
+                cs_move_player_rot::CsMovePlayerRot, cs_ping_request::CsPingRequest,
+                cs_player_abilities::CsPlayerAbilities, cs_player_action::CsPlayerAction,
                 cs_player_command::CsPlayerCommand, cs_player_input::CsPlayerInput,
-                cs_set_carried_item::CsSetCarriedItem, sc_entity_event::ScEntityEvent,
-                sc_game_event::ScGameEvent, sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
+                cs_player_loaded::CsPlayerLoaded, cs_set_carried_item::CsSetCarriedItem,
+                cs_swing::CsSwing, sc_entity_event::ScEntityEvent, sc_game_event::ScGameEvent,
+                sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
                 sc_player_abilities::ScPlayerAbilities, sc_player_position::ScPlayerPosition,
                 sc_plugin_message::ScPluginMessage, sc_set_center_chunk::ScSetCenterChunk,
             },
@@ -169,6 +174,10 @@ pub async fn handle_connection(
                         }
                     }
                     ConnectionState::Configuration => {
+                        if id == CsConfigCustomPayload::ID || id == CsSelectKnownPacks::ID {
+                            continue;
+                        }
+
                         if id == CsClientInformation::ID {
                             // registries
                             writer
@@ -312,6 +321,22 @@ pub async fn handle_connection(
                         }
                     }
                     ConnectionState::Play => {
+                        if id == CsMovePlayerRot::ID
+                            || id == CsPlayerInput::ID
+                            || id == CsPlayerCommand::ID
+                            || id == CsChunkBatchReceived::ID
+                            || id == CsSetCarriedItem::ID
+                            || id == CsCustomPayload::ID
+                            || id == CsAcceptTeleportation::ID
+                            || id == CsPlayerLoaded::ID
+                            || id == CsPlayerAction::ID
+                            || id == CsSwing::ID
+                            // only gets sent when F3 is open, practically useless
+                            || id == CsPingRequest::ID
+                        {
+                            continue;
+                        }
+
                         if id == CsClientTickEnd::ID {
                             if client_tick % 20 == 0 {
                                 writer.write_pkt(ScKeepAlive::new(1)).await?;
@@ -379,18 +404,6 @@ pub async fn handle_connection(
                                     game_mode: pkt.game_mode,
                                 })
                                 .await?;
-                            continue;
-                        }
-
-                        // chunk batch received, set carried item
-                        if id == CsMovePlayerRot::ID
-                            || id == CsPlayerInput::ID
-                            || id == CsPlayerCommand::ID
-                            || id == CsChunkBatchReceived::ID
-                            || id == CsSetCarriedItem::ID
-                            // only gets sent when F3 is open, practically useless
-                            || id == CsPingRequest::ID
-                        {
                             continue;
                         }
 

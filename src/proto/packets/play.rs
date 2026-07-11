@@ -1,5 +1,10 @@
 use crate::{
-    codecs::{array::Array, enums::Enum, position::Position, string8::String8},
+    codecs::{
+        array::{Array, RemainingArray},
+        enums::Enum,
+        position::Position,
+        string8::String8,
+    },
     create_enum, create_enum_varint,
     proto::{packet_bytes::PacketBytes, varint::VarInt},
     quickpkt,
@@ -73,6 +78,11 @@ create_enum!(ByteGameMode, u8,
     Spectator => 3
 );
 
+create_enum_varint!(PlayerHand,
+    Main => 0,
+    Off => 1
+);
+
 quickpkt!(sc_keep_alive, 0x2B, rand => i64);
 quickpkt!(cs_keep_alive, 0x1B);
 quickpkt!(cs_client_tick_end, 0x0C);
@@ -138,3 +148,8 @@ quickpkt!(sc_chunk_batch_finished, 0x0B, batch_size => VarInt);
 // We don't use RemainingArray here because it would be incredibly slow.
 quickpkt!(sc_level_chunk_with_light, 0x2C, bytes => PacketBytes);
 quickpkt!(sc_block_update, 0x08, location => Position, global_block_id => VarInt);
+
+quickpkt!(cs_custom_payload, 0x15, channel => String, data => RemainingArray<u8>);
+quickpkt!(cs_accept_teleportation, 0x00, id => u8);
+quickpkt!(cs_player_loaded, 0x2B);
+quickpkt!(cs_swing, 0x3C, hand => Enum<PlayerHand>);

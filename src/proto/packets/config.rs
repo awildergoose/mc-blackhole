@@ -19,3 +19,7 @@ quickpkt!(sc_finish_configuration, 0x03);
 quickpkt!(cs_finish_configuration, 0x03);
 
 quickpkt!(cs_client_information, 0x00); // TODO
+quickpkt!(cs_select_known_packs, 0x07); // TODO
+
+// could be anything! who knows! never trust the client!
+quickpkt!(cs_config_custom_payload, 0x01, channel => String, data => RemainingArray<u8>);
