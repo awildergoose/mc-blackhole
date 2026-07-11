@@ -49,20 +49,17 @@ impl Section {
     }
 
     fn get_at_index(&self, i: u32) -> u64 {
-        let b = self.bits_per_entry;
         let epl = self.entries_per_long;
         let long_index = (i / epl) as usize;
-        let bit_index = (i % epl) * b;
+        let bit_index = (i % epl) * self.bits_per_entry;
 
-        let m = self.mask;
-        (self.data[long_index] >> bit_index) & m
+        (self.data[long_index] >> bit_index) & self.mask
     }
 
     fn set_at_index(&mut self, i: u32, value: u64) {
-        let b = self.bits_per_entry;
         let epl = self.entries_per_long;
         let long_index = (i / epl) as usize;
-        let bit_index = (i % epl) * b;
+        let bit_index = (i % epl) * self.bits_per_entry;
 
         let m = self.mask;
         self.data[long_index] &= !(m << bit_index);
@@ -70,13 +67,11 @@ impl Section {
     }
 
     pub fn get_block(&self, x: u32, y: u32, z: u32) -> u64 {
-        let idx = Self::entry_index(x, y, z);
-        self.get_at_index(idx)
+        self.get_at_index(Self::entry_index(x, y, z))
     }
 
     pub fn set_block(&mut self, x: u32, y: u32, z: u32, value: u64) {
-        let idx = Self::entry_index(x, y, z);
-        self.set_at_index(idx, value);
+        self.set_at_index(Self::entry_index(x, y, z), value);
     }
 }
 
