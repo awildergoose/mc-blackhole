@@ -16,3 +16,6 @@ quickpkt!(
 quickpkt!(sc_registries, 0x07, raw => RemainingArray<u8>);
 quickpkt!(sc_tags, 0x0D, raw => RemainingArray<u8>);
 quickpkt!(sc_finish_configuration, 0x03);
+quickpkt!(cs_finish_configuration, 0x03);
+
+quickpkt!(cs_client_information, 0x00); // TODO

@@ -18,19 +18,25 @@ use crate::{
         packets::{
             Packet,
             config::{
-                KnownPack, sc_finish_configuration::ScFinishConfiguration,
-                sc_registries::ScRegistries, sc_select_known_packs::ScSelectKnownPacks,
-                sc_tags::ScTags, sc_update_enabled_features::ScUpdateEnabledFeatures,
+                KnownPack, cs_client_information::CsClientInformation,
+                cs_finish_configuration::CsFinishConfiguration,
+                sc_finish_configuration::ScFinishConfiguration, sc_registries::ScRegistries,
+                sc_select_known_packs::ScSelectKnownPacks, sc_tags::ScTags,
+                sc_update_enabled_features::ScUpdateEnabledFeatures,
             },
             handshake::cs_intention::CsIntention,
             login::{
-                cs_login_start::CsLoginStart, sc_login_success::ScLoginSuccess,
-                sc_set_compression::ScSetCompression,
+                cs_login_acknowledged::CsLoginAcknowledged, cs_login_start::CsLoginStart,
+                sc_login_success::ScLoginSuccess, sc_set_compression::ScSetCompression,
             },
             play::{
                 EntityEvent, GameEvent, cs_change_game_mode::CsChangeGameMode,
-                cs_chat_command::CsChatCommand, cs_move_player_pos::CsMovePlayerPos,
-                cs_move_player_pos_rot::CsMovePlayerPosRot, sc_entity_event::ScEntityEvent,
+                cs_chat_command::CsChatCommand, cs_chunk_batch_received::CsChunkBatchReceived,
+                cs_client_tick_end::CsClientTickEnd, cs_keep_alive::CsKeepAlive,
+                cs_move_player_pos::CsMovePlayerPos, cs_move_player_pos_rot::CsMovePlayerPosRot,
+                cs_move_player_rot::CsMovePlayerRot, cs_ping_request::CsPingRequest,
+                cs_player_command::CsPlayerCommand, cs_player_input::CsPlayerInput,
+                cs_set_carried_item::CsSetCarriedItem, sc_entity_event::ScEntityEvent,
                 sc_game_event::ScGameEvent, sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
                 sc_player_abilities::ScPlayerAbilities, sc_player_position::ScPlayerPosition,
                 sc_plugin_message::ScPluginMessage, sc_set_center_chunk::ScSetCenterChunk,
@@ -53,7 +59,6 @@ pub enum ConnectionState {
     Login,
     Configuration,
     Play,
-    Ingame,
 }
 
 struct StopWorldOnDrop(WorldHandle);
@@ -135,7 +140,7 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
 
         loop {
             interval.tick().await;
-            if *ticker_state.read().await != ConnectionState::Ingame {
+            if *ticker_state.read().await != ConnectionState::Play {
                 continue;
             }
             if let Err(e) = ticker_world.send(WorldRequest::Tick).await {
@@ -152,7 +157,7 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
 
                 match current_state {
                     ConnectionState::Login => {
-                        if id == 0x03 {
+                        if id == CsLoginAcknowledged::ID {
                             writer
                                 .write_pkt(ScUpdateEnabledFeatures {
                                     features: vec!["minecraft:vanilla".to_owned()],
@@ -176,7 +181,7 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                         }
                     }
                     ConnectionState::Configuration => {
-                        if id == 0x00 {
+                        if id == CsClientInformation::ID {
                             // registries
                             writer
                                 .write_pkt(ScRegistries::new(Vec::from(regs::SECTION0)))
@@ -243,6 +248,74 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                                 .await?;
                             writer.write_pkt(ScTags::new(Vec::from(tags::TAGS))).await?;
                             writer.write_pkt(ScFinishConfiguration::new()).await?;
+                        } else if id == CsFinishConfiguration::ID {
+                            writer
+                                .write_pkt(ScLogin {
+                                    entity_id: 0,
+                                    is_hardcore: false,
+                                    dimensions: vec!["overworld".to_owned()],
+                                    max_players: 1,
+                                    view_distance: world.get_view_distance().await?,
+                                    simulation_distance: world.get_view_distance().await?,
+                                    reduced_debug_info: false,
+                                    respawn_screen: false,
+                                    limited_crafting: false,
+                                    dimension_type: 0,
+                                    dimension: "overworld".to_owned(),
+                                    seed: 0,
+                                    gamemode: 1,
+                                    prev_gamemode: 0xFF,
+                                    is_debug: false,
+                                    is_flat: false,
+                                    has_death_location: false,
+                                    portal_cooldown: 0,
+                                    sea_level: 63,
+                                    secure_chat: false,
+                                })
+                                .await?;
+
+                            writer
+                                .write_pkt(ScEntityEvent::new(
+                                    0,
+                                    EntityEvent::SetOpPermissionLevel4,
+                                ))
+                                .await?;
+                            writer
+                                .write_pkt(ScGameEvent::new(GameEvent::StartWaitingForChunks, 0.0))
+                                .await?;
+                            writer.write_pkt(ScSetCenterChunk::new(0, 0)).await?;
+                            writer
+                                .write_pkt(ScPlayerPosition::new(
+                                    0, 0.5, 95.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
+                                ))
+                                .await?;
+
+                            // brand
+                            writer
+                                .write_pkt(ScPluginMessage::new(
+                                    "minecraft:brand".to_owned(),
+                                    "black_hole".to_owned(),
+                                ))
+                                .await?;
+
+                            // Player Info Update (tab list)
+                            body = PacketBytes::new();
+                            // 0x08 (list) | 0x01 (add player)
+                            body.put_u8(0x09)?; // the bit
+
+                            body.put_var_int(1)?; // collection len
+                            body.put_uuid(ls.game_profile.uuid)?; // player uuid
+
+                            body.put_string(ls.game_profile.username.clone())?; // player name
+                            body.put_var_int(0)?; // count of properties
+
+                            body.put_bool(true)?; // listed
+
+                            writer.write_packet(0x44, body.to_vec()).await?;
+
+                            // keep alive
+                            writer.write_pkt(ScKeepAlive::new(1)).await?;
+
                             {
                                 *state.write().await = ConnectionState::Play;
                             }
@@ -250,9 +323,8 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                             eprintln!("configuration received packet id {id:X}");
                         }
                     }
-                    ConnectionState::Play | ConnectionState::Ingame => {
-                        // client tick end
-                        if id == 0x0C {
+                    ConnectionState::Play => {
+                        if id == CsClientTickEnd::ID {
                             if client_tick % 20 == 0 {
                                 writer.write_pkt(ScKeepAlive::new(1)).await?;
                             }
@@ -262,7 +334,7 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                         }
 
                         // client keep alive
-                        if id == 0x1B {
+                        if id == CsKeepAlive::ID {
                             continue;
                         }
 
@@ -292,14 +364,15 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                             continue;
                         }
 
-                        // move player rot, player input, player command, chunk batch received, set carried item
-                        if id == 0x1F || id == 0x2A || id == 0x29 || id == 0xA || id == 0x34 {
-                            continue;
-                        }
-
-                        // ping request, only gets sent when F3 is open
-                        // practically useless for our use case
-                        if id == 0x25 {
+                        // chunk batch received, set carried item
+                        if id == CsMovePlayerRot::ID
+                            || id == CsPlayerInput::ID
+                            || id == CsPlayerCommand::ID
+                            || id == CsChunkBatchReceived::ID
+                            || id == CsSetCarriedItem::ID
+                            // only gets sent when F3 is open, practically useless
+                            || id == CsPingRequest::ID
+                        {
                             continue;
                         }
 
@@ -408,80 +481,6 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                         }
 
                         println!("play received packet id {id:X}");
-
-                        if id == 0x03 {
-                            // we're now in play, lets send Login
-                            writer
-                                .write_pkt(ScLogin {
-                                    entity_id: 0,
-                                    is_hardcore: false,
-                                    dimensions: vec!["overworld".to_owned()],
-                                    max_players: 1,
-                                    view_distance: world.get_view_distance().await?,
-                                    simulation_distance: world.get_view_distance().await?,
-                                    reduced_debug_info: false,
-                                    respawn_screen: false,
-                                    limited_crafting: false,
-                                    dimension_type: 0,
-                                    dimension: "overworld".to_owned(),
-                                    seed: 0,
-                                    gamemode: 1,
-                                    prev_gamemode: 0xFF,
-                                    is_debug: false,
-                                    is_flat: false,
-                                    has_death_location: false,
-                                    portal_cooldown: 0,
-                                    sea_level: 63,
-                                    secure_chat: false,
-                                })
-                                .await?;
-
-                            writer
-                                .write_pkt(ScEntityEvent::new(
-                                    0,
-                                    EntityEvent::SetOpPermissionLevel4,
-                                ))
-                                .await?;
-                            writer
-                                .write_pkt(ScGameEvent::new(GameEvent::StartWaitingForChunks, 0.0))
-                                .await?;
-                            writer.write_pkt(ScSetCenterChunk::new(0, 0)).await?;
-                            writer
-                                .write_pkt(ScPlayerPosition::new(
-                                    0, 0.5, 95.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
-                                ))
-                                .await?;
-
-                            // brand
-                            writer
-                                .write_pkt(ScPluginMessage::new(
-                                    "minecraft:brand".to_owned(),
-                                    "black_hole".to_owned(),
-                                ))
-                                .await?;
-
-                            // Player Info Update (tab list)
-                            body = PacketBytes::new();
-                            // 0x08 (list) | 0x01 (add player)
-                            body.put_u8(0x09)?; // the bit
-
-                            body.put_var_int(1)?; // collection len
-                            body.put_uuid(ls.game_profile.uuid)?; // player uuid
-
-                            body.put_string(ls.game_profile.username.clone())?; // player name
-                            body.put_var_int(0)?; // count of properties
-
-                            body.put_bool(true)?; // listed
-
-                            writer.write_packet(0x44, body.to_vec()).await?;
-
-                            // keep alive
-                            writer.write_pkt(ScKeepAlive::new(1)).await?;
-
-                            {
-                                *state.write().await = ConnectionState::Ingame;
-                            }
-                        }
                     }
                     _ => unreachable!(),
                 }

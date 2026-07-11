@@ -13,3 +13,4 @@ quickpkt!(
     username => String,
     uuid => Uuid
 );
+quickpkt!(cs_login_acknowledged, 0x03);
