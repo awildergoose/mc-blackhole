@@ -398,6 +398,20 @@ pub async fn handle_connection(
                                     pkt.game_mode as i32 as f32,
                                 ))
                                 .await?;
+
+                            // this is required for spectator mode noclip, for some reason
+                            // Player Info Update (tab list)
+                            body = PacketBytes::new();
+                            // 0x04 (update game mode)
+                            body.put_u8(0x04)?; // the bit
+
+                            body.put_var_int(1)?; // collection len
+                            body.put_uuid(ls.game_profile.uuid)?; // player uuid
+
+                            body.put_var_int(pkt.game_mode as i32)?; // game mode
+
+                            writer.write_packet(0x44, body.to_vec()).await?;
+
                             world
                                 .send(WorldRequest::UpdatePlayerGameMode {
                                     player,
@@ -427,6 +441,9 @@ pub async fn handle_connection(
                                     flags |= 0x01; // invulnerable
                                     flags |= 0x04; // allow flying
                                     flags |= 0x08; // instant break
+                                } else if game_mode == GameMode::Spectator {
+                                    flags |= 0x02; // flying
+                                    flags |= 0x04; // allow flying
                                 }
 
                                 if flying {
