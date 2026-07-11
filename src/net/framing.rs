@@ -75,6 +75,7 @@ impl FramedConnWrite {
         self.write_packet(T::ID, &pkt.encoded()?).await
     }
 
+    #[optimize(speed)]
     pub async fn write_packet(&mut self, packet_id: i32, body: &[u8]) -> anyhow::Result<()> {
         let mut packet_uncompressed = PacketBytes::new();
         packet_uncompressed.put_var_int(packet_id)?;
