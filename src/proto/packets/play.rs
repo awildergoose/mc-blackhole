@@ -65,6 +65,14 @@ create_enum_varint!(GameMode,
     Spectator => 3
 );
 
+// Really dumb, but just incase :')
+create_enum!(ByteGameMode, u8,
+    Survival => 0,
+    Creative => 1,
+    Adventure => 2,
+    Spectator => 3
+);
+
 quickpkt!(sc_keep_alive, 0x2B, rand => i64);
 quickpkt!(cs_keep_alive, 0x1B);
 quickpkt!(cs_client_tick_end, 0x0C);
@@ -87,7 +95,7 @@ quickpkt!(sc_login, 0x30,
     dimension_type => VarInt,
     dimension => String,
     seed => i64,
-    gamemode => u8,
+    gamemode => Enum<ByteGameMode>,
     prev_gamemode => u8,
     is_debug => bool,
     is_flat => bool,

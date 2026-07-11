@@ -24,15 +24,15 @@ use crate::{
                 sc_login_success::ScLoginSuccess, sc_set_compression::ScSetCompression,
             },
             play::{
-                EntityEvent, GameEvent, GameMode, cs_change_game_mode::CsChangeGameMode,
-                cs_chat_command::CsChatCommand, cs_chunk_batch_received::CsChunkBatchReceived,
-                cs_client_tick_end::CsClientTickEnd, cs_keep_alive::CsKeepAlive,
-                cs_move_player_pos::CsMovePlayerPos, cs_move_player_pos_rot::CsMovePlayerPosRot,
-                cs_move_player_rot::CsMovePlayerRot, cs_ping_request::CsPingRequest,
-                cs_player_abilities::CsPlayerAbilities, cs_player_command::CsPlayerCommand,
-                cs_player_input::CsPlayerInput, cs_set_carried_item::CsSetCarriedItem,
-                sc_entity_event::ScEntityEvent, sc_game_event::ScGameEvent,
-                sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
+                ByteGameMode, EntityEvent, GameEvent, GameMode,
+                cs_change_game_mode::CsChangeGameMode, cs_chat_command::CsChatCommand,
+                cs_chunk_batch_received::CsChunkBatchReceived, cs_client_tick_end::CsClientTickEnd,
+                cs_keep_alive::CsKeepAlive, cs_move_player_pos::CsMovePlayerPos,
+                cs_move_player_pos_rot::CsMovePlayerPosRot, cs_move_player_rot::CsMovePlayerRot,
+                cs_ping_request::CsPingRequest, cs_player_abilities::CsPlayerAbilities,
+                cs_player_command::CsPlayerCommand, cs_player_input::CsPlayerInput,
+                cs_set_carried_item::CsSetCarriedItem, sc_entity_event::ScEntityEvent,
+                sc_game_event::ScGameEvent, sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
                 sc_player_abilities::ScPlayerAbilities, sc_player_position::ScPlayerPosition,
                 sc_plugin_message::ScPluginMessage, sc_set_center_chunk::ScSetCenterChunk,
             },
@@ -252,7 +252,7 @@ pub async fn handle_connection(
                                     dimension_type: 0,
                                     dimension: "overworld".to_owned(),
                                     seed: 0,
-                                    gamemode: 1,
+                                    gamemode: ByteGameMode::Survival,
                                     prev_gamemode: 0xFF,
                                     is_debug: false,
                                     is_flat: false,
@@ -412,12 +412,12 @@ pub async fn handle_connection(
                                 let mut flags = 0x00;
 
                                 if flying {
-                                    flags &= 0x02; // flying
+                                    flags |= 0x02; // flying
                                 }
 
                                 if game_mode == GameMode::Creative {
-                                    flags &= 0x04; // allow flying
-                                    flags &= 0x08; // instant break
+                                    flags |= 0x04; // allow flying
+                                    flags |= 0x08; // instant break
                                 }
 
                                 writer
