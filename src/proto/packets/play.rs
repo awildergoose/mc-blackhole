@@ -149,7 +149,7 @@ quickpkt!(sc_chunk_batch_finished, 0x0B, batch_size => VarInt);
 quickpkt!(sc_level_chunk_with_light, 0x2C, bytes => PacketBytes);
 quickpkt!(sc_block_update, 0x08, location => Position, global_block_id => VarInt);
 
-quickpkt!(cs_custom_payload, 0x15, channel => String, data => RemainingArray<u8>);
+quickpkt!(cs_custom_payload, 0x02, channel => String, data => RemainingArray<u8>);
 quickpkt!(cs_accept_teleportation, 0x00, id => u8);
 quickpkt!(cs_player_loaded, 0x2B);
 quickpkt!(cs_swing, 0x3C, hand => Enum<PlayerHand>);
