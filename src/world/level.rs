@@ -5,11 +5,15 @@ use cgmath::{Vector2, Vector3};
 use noise::Perlin;
 use rand::{SeedableRng, rngs::StdRng};
 
-use crate::world::{
-    chunk::{Chunk, determine_chunk_seed},
-    chunk_gen::{ChunkGenerationParams, do_chunk_generation},
-    entity::{Entity, player::PlayerEntity},
-    palette::PaletteBlockKind,
+use crate::{
+    codecs::position::Position,
+    proto::packets::play::sc_block_update::ScBlockUpdate,
+    world::{
+        chunk::{Chunk, determine_chunk_seed},
+        chunk_gen::{ChunkGenerationParams, do_chunk_generation},
+        entity::{Entity, player::PlayerEntity},
+        palette::PaletteBlockKind,
+    },
 };
 
 pub type ChunkPos = Vector2<i32>;
@@ -70,6 +74,7 @@ impl BlockPatch {
 
 pub struct Level {
     pub entities: Vec<Arc<RwLock<Box<dyn Entity>>>>,
+    pub players: Vec<EntityId>,
     pub chunks: HashMap<ChunkPos, Chunk>,
     pub patches: HashMap<ChunkPos, Vec<BlockPatch>>,
     pub seed: u64,
@@ -84,6 +89,7 @@ impl Level {
 
         Self {
             entities: vec![],
+            players: vec![],
             chunks: HashMap::new(),
             patches: HashMap::new(),
             seed,
@@ -92,31 +98,61 @@ impl Level {
         }
     }
 
+    pub fn add_player(&mut self, entity: PlayerEntity) -> EntityId {
+        let id = self.add_entity(entity);
+        self.players.push(id);
+        id
+    }
+
     pub fn add_entity<T: Entity + 'static>(&mut self, entity: T) -> EntityId {
         self.entities.push(Arc::new(RwLock::new(Box::new(entity))));
         self.entities.len() - 1
     }
 
     #[expect(clippy::significant_drop_tightening)]
-    pub async fn with_entity<T: Entity + 'static, F, R>(&self, id: EntityId, f: F) -> Option<R>
+    pub async fn with_entity<T: Entity + 'static, F, R>(
+        &self,
+        id: EntityId,
+        f: F,
+    ) -> anyhow::Result<R>
     where
         F: FnOnce(&Self, &T) -> R,
     {
-        let entity = self.entities.get(id)?.write().await;
-        let entity = entity.as_any().downcast_ref::<T>()?;
+        let entity = self
+            .entities
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("failed to find entity"))?
+            .write()
+            .await;
+        let entity = entity
+            .as_any()
+            .downcast_ref::<T>()
+            .ok_or_else(|| anyhow::anyhow!("failed to downcast entity to T"))?;
 
-        Some(f(self, entity))
+        Ok(f(self, entity))
     }
 
     #[expect(clippy::significant_drop_tightening)]
-    pub async fn with_entity_mut<T: Entity + 'static, F, R>(&self, id: EntityId, f: F) -> Option<R>
+    pub async fn with_entity_mut<T: Entity + 'static, F, R>(
+        &self,
+        id: EntityId,
+        f: F,
+    ) -> anyhow::Result<R>
     where
         F: FnOnce(&Self, &mut T) -> R,
     {
-        let mut entity = self.entities.get(id)?.write().await;
-        let entity = entity.as_any_mut().downcast_mut::<T>()?;
+        let mut entity = self
+            .entities
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("failed to find entity"))?
+            .write()
+            .await;
+        let entity = entity
+            .as_any_mut()
+            .downcast_mut::<T>()
+            .ok_or_else(|| anyhow::anyhow!("failed to downcast entity to T"))?;
 
-        Some(f(self, entity))
+        Ok(f(self, entity))
     }
 
     #[must_use]
@@ -163,13 +199,13 @@ impl Level {
     }
 
     #[expect(clippy::cast_precision_loss)]
-    pub fn add_metaball(
+    pub async fn add_metaball(
         &mut self,
         center_world: Vector3<i32>,
         radius: f32,
         iso: f32,
         kind: PaletteBlockKind,
-    ) {
+    ) -> anyhow::Result<()> {
         let r2 = radius * radius;
         let eps = 1e-4f32;
 
@@ -194,11 +230,13 @@ impl Level {
                     let f = r2 / (d2 + eps);
 
                     if f >= iso {
-                        self.set_block(wx, wy, wz, kind);
+                        self.set_block(wx, wy, wz, kind).await?;
                     }
                 }
             }
         }
+
+        Ok(())
     }
 
     #[must_use]
@@ -228,11 +266,51 @@ impl Level {
         (cx, cz)
     }
 
-    pub fn set_block(&mut self, wx: i32, wy: i32, wz: i32, kind: PaletteBlockKind) {
+    pub async fn set_block(
+        &mut self,
+        wx: i32,
+        wy: i32,
+        wz: i32,
+        kind: PaletteBlockKind,
+    ) -> anyhow::Result<()> {
         let (cx, cz, lx, lz) = Self::world_to_chunk_and_local(wx, wz);
+        let cpos = Vector2::new(cx, cz);
 
-        self.get_chunk(Vector2::new(cx, cz))
-            .set_block_local(lx, wy, lz, kind);
+        self.get_chunk(cpos).set_block_local(lx, wy, lz, kind);
+
+        for player in &self.players {
+            let seen = self
+                .with_entity::<PlayerEntity, _, _>(*player, |_level, player| {
+                    player.has_seen_chunk(cpos)
+                })
+                .await?;
+
+            if seen {
+                self.send_block_update(*player, wx, wy, wz, kind).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn send_block_update(
+        &self,
+        player: EntityId,
+        wx: i32,
+        wy: i32,
+        wz: i32,
+        kind: PaletteBlockKind,
+    ) -> anyhow::Result<()> {
+        let location = Position::from_pos(i64::from(wx), i64::from(wy), i64::from(wz));
+        let writer = self
+            .with_entity::<PlayerEntity, _, _>(player, |_level, player| {
+                player.packet_writer.clone()
+            })
+            .await?;
+        writer
+            .write_pkt(ScBlockUpdate::new(location, kind.as_minecraft_id() as i32))
+            .await?;
+        Ok(())
     }
 
     fn make_block_patch(
@@ -254,7 +332,13 @@ impl Level {
         )
     }
 
-    pub fn set_block_perma(&mut self, wx: i32, wy: i32, wz: i32, kind: PaletteBlockKind) {
+    pub async fn set_block_perma(
+        &mut self,
+        wx: i32,
+        wy: i32,
+        wz: i32,
+        kind: PaletteBlockKind,
+    ) -> anyhow::Result<()> {
         let patch = self.make_block_patch(wx, wy, wz, kind);
         let (cx, cz) = Self::world_to_chunk(wx, wz);
         let cpos = Vector2::new(cx, cz);
@@ -264,8 +348,10 @@ impl Level {
             .and_modify(|v| v.push(patch))
             .or_insert_with(|| vec![patch]);
         if self.is_chunk_loaded(cpos) {
-            self.set_block(wx, wy, wz, kind);
+            self.set_block(wx, wy, wz, kind).await?;
         }
+
+        Ok(())
     }
 
     #[must_use]
@@ -301,8 +387,6 @@ impl Level {
         self.with_entity_mut::<PlayerEntity, _, _>(player, |_, p| {
             p.update_position(position);
         })
-        .await;
-
-        Ok(())
+        .await
     }
 }

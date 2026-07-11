@@ -1,5 +1,5 @@
 use crate::{
-    codecs::{array::Array, enums::Enum, string8::String8},
+    codecs::{array::Array, enums::Enum, position::Position, string8::String8},
     create_enum,
     proto::{packet_bytes::PacketBytes, varint::VarInt},
     quickpkt,
@@ -84,3 +84,4 @@ quickpkt!(sc_chunk_batch_finished, 0x0B, batch_size => VarInt);
 // NOTE: The actual packet structure is manually constructed in Chunk::encode!
 // We don't use RemainingArray here because it would be incredibly slow.
 quickpkt!(sc_level_chunk_with_light, 0x2C, bytes => PacketBytes);
+quickpkt!(sc_block_update, 0x08, location => Position, global_block_id => VarInt);

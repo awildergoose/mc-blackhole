@@ -10,6 +10,7 @@ use crate::{
         base::{MCDecode, MCEncode},
         enums::Enum,
         game_profile::GameProfile,
+        position::Position,
     },
     proto::varint::{read_var_int, write_var_int},
 };
@@ -157,6 +158,14 @@ impl PacketBytes {
 
     pub fn get_enum<T: MCEncode + MCDecode>(&mut self) -> GetRes<Enum<T>> {
         T::decode(self)
+    }
+
+    pub fn put_position(&mut self, pos: Position) -> PutRes {
+        pos.encode(self)
+    }
+
+    pub fn get_position(&mut self) -> GetRes<Position> {
+        Position::decode(self)
     }
 }
 

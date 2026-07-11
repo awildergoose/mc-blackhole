@@ -42,7 +42,7 @@ use crate::{
         entity::player::PlayerEntity,
         level::Level,
         palette::PaletteBlockKind,
-        worker::{WorldHandle, WorldWorker},
+        worker::{WorldHandle, WorldRequest, WorldWorker},
     },
 };
 
@@ -64,7 +64,7 @@ impl Drop for StopWorldOnDrop {
         let world = self.0.clone();
 
         handle.spawn(async move {
-            let _ = world.stop().await;
+            let _ = world.send(WorldRequest::Stop).await;
         });
     }
 }
@@ -104,15 +104,19 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
     let mut client_tick = 0;
     let mut body;
     let mut level = Level::new(16);
-    let player = level.add_entity(PlayerEntity::new(writer.clone()));
+    let player = level.add_player(PlayerEntity::new(writer.clone()));
 
-    level.add_metaball(
-        Vector3::new(0, 23, 0),
-        8.0,
-        2.0,
-        PaletteBlockKind::OakPlanks,
-    );
-    level.set_block_perma(0, 0, 0, PaletteBlockKind::Grass);
+    level
+        .add_metaball(
+            Vector3::new(0, 23, 0),
+            8.0,
+            2.0,
+            PaletteBlockKind::OakPlanks,
+        )
+        .await?;
+    level
+        .set_block_perma(0, 0, 0, PaletteBlockKind::Grass)
+        .await?;
 
     let (worker, world) = WorldWorker::new(level);
     let _guard = StopWorldOnDrop(world.clone());
@@ -134,7 +138,7 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
             if *ticker_state.read().await != ConnectionState::Ingame {
                 continue;
             }
-            if let Err(e) = ticker_world.tick().await {
+            if let Err(e) = ticker_world.send(WorldRequest::Tick).await {
                 eprintln!("failed to tick world: {e:?}");
                 break;
             }
@@ -267,7 +271,10 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                             let pkt = CsMovePlayerPos::decode(&mut data)?;
 
                             world
-                                .update_player_position(player, Vector3::new(pkt.x, pkt.y, pkt.z))
+                                .send(WorldRequest::UpdatePlayerPosition {
+                                    player,
+                                    position: Vector3::new(pkt.x, pkt.y, pkt.z),
+                                })
                                 .await?;
                             continue;
                         }
@@ -277,7 +284,10 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                             let pkt = CsMovePlayerPosRot::decode(&mut data)?;
 
                             world
-                                .update_player_position(player, Vector3::new(pkt.x, pkt.y, pkt.z))
+                                .send(WorldRequest::UpdatePlayerPosition {
+                                    player,
+                                    position: Vector3::new(pkt.x, pkt.y, pkt.z),
+                                })
                                 .await?;
                             continue;
                         }
@@ -357,6 +367,18 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
                                         0, x, y, z, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
                                     ))
                                     .await?;
+                                continue;
+                            }
+
+                            if command == "metaball" {
+                                let mut position = world.get_player_position(player).await?;
+                                position += Vector3::new(0.0, 15.0, 0.0);
+                                let position = Vector3::new(
+                                    position.x as i32,
+                                    position.y as i32,
+                                    position.z as i32,
+                                );
+                                world.send(WorldRequest::AddMetaball { position }).await?;
                                 continue;
                             }
 
@@ -471,7 +493,7 @@ pub async fn handle_connection(conn: FramedConn) -> anyhow::Result<()> {
         }
     }
 
-    world.stop().await?;
+    world.send(WorldRequest::Stop).await?;
     handle.await?;
     writer_handle.abort();
     ticker_handle.abort();

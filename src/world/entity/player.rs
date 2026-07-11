@@ -21,7 +21,7 @@ pub struct PlayerEntity {
     position: Vector3<f64>,
     sent_chunks: HashSet<ChunkPos>,
     chunk_queue: Vec<ChunkPos>,
-    packet_writer: PacketWriterHandle,
+    pub packet_writer: PacketWriterHandle,
 }
 
 impl PlayerEntity {
@@ -53,6 +53,11 @@ impl PlayerEntity {
         );
 
         Vector2::new(cx, cz)
+    }
+
+    #[must_use]
+    pub fn has_seen_chunk(&self, pos: ChunkPos) -> bool {
+        self.sent_chunks.contains(&pos)
     }
 }
 
