@@ -120,7 +120,7 @@ pub async fn handle_connection(
         .set_block_perma(0, 0, 0, PaletteBlockKind::Grass)
         .await?;
     let mut rng = level.make_rng(100);
-    level.add_entity(StructureEntity::new(Vector3::new(
+    let digger = level.add_entity(StructureEntity::new(Vector3::new(
         rng.random_range(-2048..2048),
         rng.random_range(-64..318),
         rng.random_range(-2048..2048),
@@ -290,7 +290,7 @@ pub async fn handle_connection(
                                 .write_pkt(ScGameEvent::new(GameEvent::StartWaitingForChunks, 0.0))
                                 .await?;
                             writer.write_pkt(ScSetCenterChunk::new(0, 0)).await?;
-                            let world_spawn = world.get_player_spawn_position().await?;
+                            let world_spawn = world.get_world_spawn_position().await?;
                             writer
                                 .write_pkt(ScPlayerPosition::new(
                                     0,
@@ -576,6 +576,21 @@ pub async fn handle_connection(
                                         perma: true,
                                     })
                                     .await?;
+                                continue;
+                            }
+
+                            if command == "digger" {
+                                let position = world.get_digger_position(digger).await?;
+
+                                // System Chat Message
+                                body = PacketBytes::new();
+                                body.put_u8(0x08)?; // TAG_String
+                                body.put_u8(0x00)?; // TAG_END?
+                                body.put_string(format!("digger at {position:?}"))?; // text
+                                body.put_u8(0x00)?; // overlay
+
+                                writer.write_packet(0x77, body.to_vec()).await?;
+
                                 continue;
                             }
 

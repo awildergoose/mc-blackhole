@@ -4,7 +4,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::{
     proto::packets::play::GameMode,
     world::{
-        entity::player::PlayerEntity,
+        entity::{player::PlayerEntity, structure::StructureEntity},
         level::{EntityId, Level},
     },
 };
@@ -25,8 +25,12 @@ pub enum WorldRequest {
         player: EntityId,
         respond: oneshot::Sender<GameMode>,
     },
-    GetPlayerSpawnPosition {
+    GetWorldSpawnPosition {
         respond: oneshot::Sender<Vector3<f64>>,
+    },
+    GetDiggerPosition {
+        digger: EntityId,
+        respond: oneshot::Sender<Vector3<i32>>,
     },
 
     UpdatePlayerPosition {
@@ -84,10 +88,11 @@ macro_rules! makegetalias {
 
 impl WorldHandle {
     makegetalias!(GetViewDistance, i32);
-    makegetalias!(GetPlayerPosition, Vector3<f64>, player => usize);
-    makegetalias!(GetPlayerFlying, bool, player => usize);
-    makegetalias!(GetPlayerGameMode, GameMode, player => usize);
-    makegetalias!(GetPlayerSpawnPosition, Vector3<f64>);
+    makegetalias!(GetWorldSpawnPosition, Vector3<f64>);
+    makegetalias!(GetPlayerPosition, Vector3<f64>, player => EntityId);
+    makegetalias!(GetPlayerFlying, bool, player => EntityId);
+    makegetalias!(GetPlayerGameMode, GameMode, player => EntityId);
+    makegetalias!(GetDiggerPosition, Vector3<i32>, digger => EntityId);
 
     pub async fn send(&self, request: WorldRequest) -> anyhow::Result<()> {
         self.tx.send(request).await?;
@@ -141,8 +146,17 @@ impl WorldWorker {
                             .await?,
                     );
                 }
-                WorldRequest::GetPlayerSpawnPosition { respond } => {
+                WorldRequest::GetWorldSpawnPosition { respond } => {
                     let _ = respond.send(self.level.get_spawn_position());
+                }
+                WorldRequest::GetDiggerPosition { digger, respond } => {
+                    let _ = respond.send(
+                        self.level
+                            .with_entity::<StructureEntity, _, _>(digger, |_level, digger| {
+                                digger.position
+                            })
+                            .await?,
+                    );
                 }
 
                 WorldRequest::UpdatePlayerPosition { player, position } => {

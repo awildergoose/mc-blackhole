@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use cgmath::{MetricSpace, Vector2, Vector3};
+use cgmath::{MetricSpace, Vector3};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 use crate::{
@@ -14,8 +14,7 @@ use crate::{
 
 pub struct StructureEntity {
     base: EntityBase,
-    position: Vector3<i32>,
-    our_patches: Vec<(Vector2<i32>, u64)>,
+    pub position: Vector3<i32>,
     rng: StdRng,
     seeded: bool,
 }
@@ -26,7 +25,6 @@ impl StructureEntity {
         Self {
             base: EntityBase::default(),
             position,
-            our_patches: vec![],
             rng: StdRng::seed_from_u64(0),
             seeded: false,
         }
@@ -52,65 +50,8 @@ impl Entity for StructureEntity {
                 self.rng = level.make_rng(112);
                 self.seeded = true;
             }
-            // if !level.tick_counter.is_multiple_of(4) {
-            //     return Ok(());
-            // }
 
-            // TODO: this is inefficient
-            // let mut to_unapply = vec![];
-
-            // for (cpos, idx) in &self.our_patches {
-            //     let patches = level.patches.get(cpos);
-
-            //     if let Some(patches) = patches
-            //         && let Some(patch) = patches.iter().find(|p| p.idx == *idx)
-            //     {
-            //         to_unapply.push((*cpos, *patch));
-            //     }
-            // }
-
-            // let mut bundles = vec![];
-
-            // for (cpos, patch) in &to_unapply {
-            //     let chunk = level.get_chunk(*cpos);
-            //     patch.unapply(chunk);
-
-            //     for player in &level.players {
-            //         let seen = level
-            //             .with_entity::<PlayerEntity, _, _>(*player, |_level, player| {
-            //                 player.has_seen_chunk(*cpos)
-            //             })
-            //             .await?;
-
-            //         if seen {
-            //             if !bundles.contains(player) {
-            //                 let writer = level
-            //                     .with_entity::<PlayerEntity, _, _>(*player, |_level, player| {
-            //                         player.packet_writer.clone()
-            //                     })
-            //                     .await?;
-            //                 writer.write_pkt(ScBundleDelimiter::new()).await?;
-
-            //                 bundles.push(*player);
-            //             }
-
-            //             level
-            //                 .send_block_update(
-            //                     *player,
-            //                     cpos.x * 16 + patch.x as i32,
-            //                     patch.y,
-            //                     cpos.y * 16 + patch.z as i32,
-            //                     patch.original,
-            //                 )
-            //                 .await?;
-            //         }
-            //     }
-            // }
-
-            // drop(to_unapply);
-            // self.our_patches.clear();
-
-            let idx = level
+            level
                 .set_block_perma(
                     self.position.x,
                     self.position.y,
@@ -118,10 +59,6 @@ impl Entity for StructureEntity {
                     PaletteBlockKind::OakPlanks,
                 )
                 .await?;
-            self.our_patches.push((
-                Vector2::from(Level::world_to_chunk(self.position.x, self.position.z)),
-                idx,
-            ));
 
             let possible: [cgmath::Vector3<f64>; 6] = [
                 Vector3::unit_x(),
@@ -132,7 +69,7 @@ impl Entity for StructureEntity {
                 -Vector3::unit_z(),
             ];
 
-            if self.rng.random_bool(0.1) {
+            if self.rng.random_bool(0.5) {
                 let player = *level
                     .players
                     .first()
@@ -171,7 +108,7 @@ impl Entity for StructureEntity {
 
             self.position.y = self.position.y.clamp(-64, 318);
 
-            let idx = level
+            level
                 .set_block_perma(
                     self.position.x,
                     self.position.y,
@@ -179,25 +116,6 @@ impl Entity for StructureEntity {
                     PaletteBlockKind::OakLog,
                 )
                 .await?;
-            self.our_patches.push((
-                Vector2::from(Level::world_to_chunk(self.position.x, self.position.z)),
-                idx,
-            ));
-
-            // for player in &bundles {
-            //     let writer = level
-            //         .with_entity::<PlayerEntity, _, _>(*player, |_level, player| {
-            //             player.packet_writer.clone()
-            //         })
-            //         .await?;
-            //     writer.write_pkt(ScBundleDelimiter::new()).await?;
-            // }
-
-            // self.counter += if self.up { 1 } else { -1 };
-
-            // if self.counter > 10 || self.counter <= 0 {
-            //     self.up = !self.up;
-            // }
 
             Ok(())
         })
