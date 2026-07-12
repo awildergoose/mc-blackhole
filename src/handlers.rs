@@ -36,9 +36,10 @@ use crate::{
                 cs_player_abilities::CsPlayerAbilities, cs_player_action::CsPlayerAction,
                 cs_player_command::CsPlayerCommand, cs_player_input::CsPlayerInput,
                 cs_player_loaded::CsPlayerLoaded, cs_set_carried_item::CsSetCarriedItem,
-                cs_swing::CsSwing, sc_block_changed_ack::ScBlockChangedAck,
-                sc_block_update::ScBlockUpdate, sc_entity_event::ScEntityEvent,
-                sc_game_event::ScGameEvent, sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
+                cs_swing::CsSwing, cs_use_item_on::CsUseItemOn,
+                sc_block_changed_ack::ScBlockChangedAck, sc_block_update::ScBlockUpdate,
+                sc_entity_event::ScEntityEvent, sc_game_event::ScGameEvent,
+                sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
                 sc_player_abilities::ScPlayerAbilities, sc_player_position::ScPlayerPosition,
                 sc_plugin_message::ScPluginMessage, sc_set_center_chunk::ScSetCenterChunk,
             },
@@ -382,6 +383,15 @@ pub async fn handle_connection(
                             world
                                 .send(WorldRequest::UpdatePlayerFlying { player, is_flying })
                                 .await?;
+                            continue;
+                        }
+
+                        if id == CsUseItemOn::ID {
+                            let pkt = CsUseItemOn::decode(&mut data)?;
+                            let seq = pkt.sequence;
+
+                            // no blocks to place anyways!
+                            writer.write_pkt(ScBlockChangedAck::new(seq)).await?;
                             continue;
                         }
 

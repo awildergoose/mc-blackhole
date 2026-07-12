@@ -48,7 +48,7 @@ impl Entity for StructureEntity {
 
     fn tick<'a>(&'a mut self, level: &'a mut Level) -> AsyncTraitFn<'a, anyhow::Result<()>> {
         async_trait_fn!({
-            if level.tick_counter.is_multiple_of(4) {
+            if !level.tick_counter.is_multiple_of(10) {
                 return Ok(());
             }
 
@@ -106,7 +106,7 @@ impl Entity for StructureEntity {
             drop(to_unapply);
             self.our_patches.clear();
 
-            for i in -self.counter..self.counter {
+            for i in (-self.counter)..=self.counter {
                 let (x, y, z) = (self.position.x, self.position.y + i, self.position.z);
                 let idx = level
                     .set_block_perma(
@@ -135,7 +135,7 @@ impl Entity for StructureEntity {
 
             self.counter += if self.up { 1 } else { -1 };
 
-            if self.counter >= 10 || self.counter <= 0 {
+            if self.counter > 10 || self.counter <= 0 {
                 self.up = !self.up;
             }
 

@@ -151,6 +151,17 @@ quickpkt!(sc_level_chunk_with_light, 0x2C, bytes => PacketBytes);
 quickpkt!(sc_forget_level_chunk, 0x25, z => i32, x => i32);
 quickpkt!(sc_block_update, 0x08, location => Position, global_block_id => VarInt);
 quickpkt!(sc_block_changed_ack, 0x04, sequence => VarInt);
+quickpkt!(cs_use_item_on, 0x3F,
+    hand => Enum<PlayerHand>,
+    location => Position,
+    face => Enum<PlayerActionFace>,
+    cursor_pos_x => f32,
+    cursor_pos_y => f32,
+    cursor_pos_z => f32,
+    inside_block => bool,
+    world_border_hit => bool,
+    sequence => VarInt
+);
 
 quickpkt!(cs_custom_payload, 0x15, channel => String, data => RemainingArray<u8>);
 quickpkt!(cs_accept_teleportation, 0x00, id => u8);
