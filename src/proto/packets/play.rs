@@ -83,6 +83,7 @@ create_enum_varint!(PlayerHand,
     Off => 1
 );
 
+quickpkt!(sc_bundle_delimiter, 0x00);
 quickpkt!(sc_keep_alive, 0x2B, rand => i64);
 quickpkt!(cs_keep_alive, 0x1B);
 quickpkt!(cs_client_tick_end, 0x0C);
@@ -149,6 +150,7 @@ quickpkt!(sc_chunk_batch_finished, 0x0B, batch_size => VarInt);
 quickpkt!(sc_level_chunk_with_light, 0x2C, bytes => PacketBytes);
 quickpkt!(sc_forget_level_chunk, 0x25, z => i32, x => i32);
 quickpkt!(sc_block_update, 0x08, location => Position, global_block_id => VarInt);
+quickpkt!(sc_block_changed_ack, 0x04, sequence => VarInt);
 
 quickpkt!(cs_custom_payload, 0x15, channel => String, data => RemainingArray<u8>);
 quickpkt!(cs_accept_teleportation, 0x00, id => u8);

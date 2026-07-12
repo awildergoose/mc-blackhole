@@ -34,3 +34,4 @@ impl Default for EntityBase {
 }
 
 pub mod player;
+pub mod structure;

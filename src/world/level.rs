@@ -21,6 +21,7 @@ pub type EntityId = usize;
 
 #[derive(Debug, Clone, Copy)]
 pub struct BlockPatch {
+    pub idx: u64,
     pub x: u32,
     pub y: i32,
     pub z: u32,
@@ -31,11 +32,13 @@ pub struct BlockPatch {
 impl BlockPatch {
     #[must_use]
     pub const fn new(
+        idx: u64,
         pos: Vector3<i32>,
         kind: PaletteBlockKind,
         original: PaletteBlockKind,
     ) -> Self {
         Self {
+            idx,
             x: pos.x as u32,
             y: pos.y,
             z: pos.z as u32,
@@ -46,6 +49,7 @@ impl BlockPatch {
 
     #[must_use]
     pub const fn new2(
+        idx: u64,
         x: u32,
         y: i32,
         z: u32,
@@ -53,6 +57,7 @@ impl BlockPatch {
         original: PaletteBlockKind,
     ) -> Self {
         Self {
+            idx,
             x,
             y,
             z,
@@ -77,6 +82,7 @@ pub struct Level {
     pub players: Vec<EntityId>,
     pub chunks: HashMap<ChunkPos, Chunk>,
     pub patches: HashMap<ChunkPos, Vec<BlockPatch>>,
+    pub patch_counter: u64,
     pub seed: u64,
     pub view_distance: i32,
     pub tick_counter: u64,
@@ -92,6 +98,7 @@ impl Level {
             players: vec![],
             chunks: HashMap::new(),
             patches: HashMap::new(),
+            patch_counter: 0,
             seed,
             view_distance,
             tick_counter: 0,
@@ -327,7 +334,9 @@ impl Level {
     ) -> BlockPatch {
         let (cx, cz, lx, lz) = Self::world_to_chunk_and_local(wx, wz);
 
+        self.patch_counter += 1;
         BlockPatch::new2(
+            self.patch_counter,
             lx,
             wy,
             lz,
@@ -343,7 +352,7 @@ impl Level {
         wy: i32,
         wz: i32,
         kind: PaletteBlockKind,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<u64> {
         let patch = self.make_block_patch(wx, wy, wz, kind);
         let (cx, cz) = Self::world_to_chunk(wx, wz);
         let cpos = Vector2::new(cx, cz);
@@ -356,7 +365,7 @@ impl Level {
             self.set_block(wx, wy, wz, kind).await?;
         }
 
-        Ok(())
+        Ok(patch.idx)
     }
 
     #[must_use]

@@ -26,7 +26,7 @@ use crate::{
                 sc_login_success::ScLoginSuccess, sc_set_compression::ScSetCompression,
             },
             play::{
-                ByteGameMode, EntityEvent, GameEvent, GameMode,
+                ByteGameMode, EntityEvent, GameEvent, GameMode, PlayerActionStatus,
                 cs_accept_teleportation::CsAcceptTeleportation,
                 cs_change_game_mode::CsChangeGameMode, cs_chat_command::CsChatCommand,
                 cs_chunk_batch_received::CsChunkBatchReceived, cs_client_tick_end::CsClientTickEnd,
@@ -36,8 +36,9 @@ use crate::{
                 cs_player_abilities::CsPlayerAbilities, cs_player_action::CsPlayerAction,
                 cs_player_command::CsPlayerCommand, cs_player_input::CsPlayerInput,
                 cs_player_loaded::CsPlayerLoaded, cs_set_carried_item::CsSetCarriedItem,
-                cs_swing::CsSwing, sc_entity_event::ScEntityEvent, sc_game_event::ScGameEvent,
-                sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
+                cs_swing::CsSwing, sc_block_changed_ack::ScBlockChangedAck,
+                sc_block_update::ScBlockUpdate, sc_entity_event::ScEntityEvent,
+                sc_game_event::ScGameEvent, sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
                 sc_player_abilities::ScPlayerAbilities, sc_player_position::ScPlayerPosition,
                 sc_plugin_message::ScPluginMessage, sc_set_center_chunk::ScSetCenterChunk,
             },
@@ -45,7 +46,7 @@ use crate::{
         raw::{regs, tags},
     },
     world::{
-        entity::player::PlayerEntity,
+        entity::{player::PlayerEntity, structure::StructureEntity},
         level::Level,
         palette::PaletteBlockKind,
         worker::{WorldHandle, WorldRequest, WorldWorker},
@@ -116,6 +117,7 @@ pub async fn handle_connection(
     level
         .set_block_perma(0, 0, 0, PaletteBlockKind::Grass)
         .await?;
+    level.add_entity(StructureEntity::new(Vector3::new(0, 50, 0)));
 
     let (worker, world) = WorldWorker::new(level);
     let _guard = StopWorldOnDrop(world.clone());
@@ -329,7 +331,6 @@ pub async fn handle_connection(
                             || id == CsCustomPayload::ID
                             || id == CsAcceptTeleportation::ID
                             || id == CsPlayerLoaded::ID
-                            || id == CsPlayerAction::ID
                             || id == CsSwing::ID
                             // only gets sent when F3 is open, practically useless
                             || id == CsPingRequest::ID
@@ -346,12 +347,10 @@ pub async fn handle_connection(
                             continue;
                         }
 
-                        // client keep alive
                         if id == CsKeepAlive::ID {
                             continue;
                         }
 
-                        // move player pos
                         if id == CsMovePlayerPos::ID {
                             let pkt = CsMovePlayerPos::decode(&mut data)?;
 
@@ -364,7 +363,6 @@ pub async fn handle_connection(
                             continue;
                         }
 
-                        // move player posrot
                         if id == CsMovePlayerPosRot::ID {
                             let pkt = CsMovePlayerPosRot::decode(&mut data)?;
 
@@ -387,7 +385,25 @@ pub async fn handle_connection(
                             continue;
                         }
 
-                        // change game mode
+                        if id == CsPlayerAction::ID {
+                            let pkt = CsPlayerAction::decode(&mut data)?;
+                            let game_mode = world.get_player_game_mode(player).await?;
+
+                            if pkt.status == PlayerActionStatus::FinishedDigging
+                                || game_mode == GameMode::Creative
+                            {
+                                let seq = pkt.sequence;
+
+                                // replace to air
+                                writer
+                                    .write_pkt(ScBlockUpdate::new(pkt.location, 0))
+                                    .await?;
+                                writer.write_pkt(ScBlockChangedAck::new(seq)).await?;
+                            }
+
+                            continue;
+                        }
+
                         #[expect(clippy::cast_precision_loss)]
                         if id == CsChangeGameMode::ID {
                             let pkt = CsChangeGameMode::decode(&mut data)?;
@@ -421,7 +437,6 @@ pub async fn handle_connection(
                             continue;
                         }
 
-                        // chat command
                         if id == CsChatCommand::ID {
                             let pkt = CsChatCommand::decode(&mut data)?;
                             let command = pkt.command;
