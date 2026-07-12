@@ -76,10 +76,10 @@ impl Drop for StopWorldOnDrop {
 
 #[expect(clippy::too_many_lines)]
 pub async fn handle_connection(
+    state: Arc<RwLock<ConnectionState>>,
     mut rd: FramedConnRead,
     writer: PacketWriterHandle,
 ) -> anyhow::Result<()> {
-    let state = Arc::new(RwLock::new(ConnectionState::Handshaking));
     let intention = expect_packet!(rd, CsIntention)?;
     if intention.intent != 2 {
         // not a login intention

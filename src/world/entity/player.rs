@@ -8,8 +8,8 @@ use crate::{
     net::handles::PacketWriterHandle,
     proto::packets::play::{
         GameMode, sc_chunk_batch_finished::ScChunkBatchFinished,
-        sc_chunk_batch_start::ScChunkBatchStart, sc_level_chunk_with_light::ScLevelChunkWithLight,
-        sc_set_center_chunk::ScSetCenterChunk,
+        sc_chunk_batch_start::ScChunkBatchStart, sc_forget_level_chunk::ScForgetLevelChunk,
+        sc_level_chunk_with_light::ScLevelChunkWithLight, sc_set_center_chunk::ScSetCenterChunk,
     },
     world::{
         entity::{Entity, EntityBase},
@@ -193,6 +193,8 @@ impl Entity for PlayerEntity {
             // unload far away chunks
             // TODO: add a little margin so it doesn't unload chunks at chunk
             // borders, and then it reloads them, which would be inefficient
+            let mut to_forget = vec![];
+
             self.sent_chunks.retain(|chunk| {
                 let dx = chunk.x - player_chunk.x;
                 let dz = chunk.y - player_chunk.y;
@@ -203,8 +205,19 @@ impl Entity for PlayerEntity {
                 let dx = pos.x - player_chunk.x;
                 let dz = pos.y - player_chunk.y;
 
-                dx.abs() <= radius && dz.abs() <= radius
+                let res = dx.abs() <= radius && dz.abs() <= radius;
+                if !res {
+                    to_forget.push(*pos);
+                }
+                res
             });
+
+            for pos in to_forget {
+                let _ = self
+                    .packet_writer
+                    .write_pkt(ScForgetLevelChunk::new(pos.y, pos.x))
+                    .await;
+            }
 
             Ok(())
         })
