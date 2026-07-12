@@ -113,7 +113,7 @@ pub async fn handle_connection(
             8.0,
             2.0,
             PaletteBlockKind::OakPlanks,
-            false,
+            true,
         )
         .await?;
     level
@@ -290,12 +290,21 @@ pub async fn handle_connection(
                                 .write_pkt(ScGameEvent::new(GameEvent::StartWaitingForChunks, 0.0))
                                 .await?;
                             writer.write_pkt(ScSetCenterChunk::new(0, 0)).await?;
+                            let world_spawn = world.get_player_spawn_position().await?;
                             writer
                                 .write_pkt(ScPlayerPosition::new(
-                                    0, 0.5, 95.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
+                                    0,
+                                    world_spawn.x,
+                                    world_spawn.y,
+                                    world_spawn.z,
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                    0,
                                 ))
                                 .await?;
-
                             // brand
                             writer
                                 .write_pkt(ScPluginMessage::new(

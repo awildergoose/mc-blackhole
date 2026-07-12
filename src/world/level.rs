@@ -3,7 +3,7 @@ use tokio::sync::RwLock;
 
 use cgmath::{Vector2, Vector3};
 use noise::Perlin;
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 use crate::{
     codecs::position::Position,
@@ -91,7 +91,7 @@ pub struct Level {
 impl Level {
     #[must_use]
     pub fn new(view_distance: i32) -> Self {
-        let seed = 69420;
+        let seed = rand::random();
 
         Self {
             entities: vec![],
@@ -108,6 +108,16 @@ impl Level {
     #[must_use]
     pub fn make_rng(&self, offset: u64) -> StdRng {
         StdRng::seed_from_u64(self.seed + offset)
+    }
+
+    #[must_use]
+    pub fn get_spawn_position(&self) -> Vector3<f64> {
+        let mut rng = self.make_rng(19);
+        Vector3::new(
+            rng.random_range(-4096.0..4096.0),
+            rng.random_range(32.0..96.0),
+            rng.random_range(-4096.0..4096.0),
+        )
     }
 
     pub fn add_player(&mut self, entity: PlayerEntity) -> EntityId {

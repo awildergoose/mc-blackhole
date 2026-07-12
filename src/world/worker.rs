@@ -25,6 +25,9 @@ pub enum WorldRequest {
         player: EntityId,
         respond: oneshot::Sender<GameMode>,
     },
+    GetPlayerSpawnPosition {
+        respond: oneshot::Sender<Vector3<f64>>,
+    },
 
     UpdatePlayerPosition {
         player: EntityId,
@@ -84,6 +87,7 @@ impl WorldHandle {
     makegetalias!(GetPlayerPosition, Vector3<f64>, player => usize);
     makegetalias!(GetPlayerFlying, bool, player => usize);
     makegetalias!(GetPlayerGameMode, GameMode, player => usize);
+    makegetalias!(GetPlayerSpawnPosition, Vector3<f64>);
 
     pub async fn send(&self, request: WorldRequest) -> anyhow::Result<()> {
         self.tx.send(request).await?;
@@ -136,6 +140,9 @@ impl WorldWorker {
                             })
                             .await?,
                     );
+                }
+                WorldRequest::GetPlayerSpawnPosition { respond } => {
+                    let _ = respond.send(self.level.get_spawn_position());
                 }
 
                 WorldRequest::UpdatePlayerPosition { player, position } => {
