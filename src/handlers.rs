@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use cgmath::Vector3;
+use cgmath::{MetricSpace, Vector3};
 use rand::RngExt;
 use tokio::{runtime::Handle, sync::RwLock};
 
@@ -581,12 +581,21 @@ pub async fn handle_connection(
 
                             if command == "digger" {
                                 let position = world.get_digger_position(digger).await?;
+                                let player_position = world.get_player_position(player).await?;
+                                let distance = Vector3::new(
+                                    f64::from(position.x),
+                                    f64::from(position.y),
+                                    f64::from(position.z),
+                                )
+                                .distance(player_position);
 
                                 // System Chat Message
                                 body = PacketBytes::new();
                                 body.put_u8(0x08)?; // TAG_String
                                 body.put_u8(0x00)?; // TAG_END?
-                                body.put_string(format!("digger at {position:?}"))?; // text
+                                body.put_string(format!(
+                                    "digger at {position:?} ({distance} away)"
+                                ))?; // text
                                 body.put_u8(0x00)?; // overlay
 
                                 writer.write_packet(0x77, body.to_vec()).await?;

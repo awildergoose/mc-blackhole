@@ -114,9 +114,9 @@ impl Level {
     pub fn get_spawn_position(&self) -> Vector3<f64> {
         let mut rng = self.make_rng(19);
         Vector3::new(
-            rng.random_range(-4096.0..4096.0),
+            rng.random_range(-512.0..512.0),
             rng.random_range(45.0..96.0),
-            rng.random_range(-4096.0..4096.0),
+            rng.random_range(-512.0..512.0),
         )
     }
 
