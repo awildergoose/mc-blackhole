@@ -29,18 +29,18 @@ fn fbm2d(perlin: &Perlin, x: f64, z: f64, octaves: u32) -> f64 {
 }
 
 #[optimize(speed)]
-fn carve_sphere<F>(cx: i32, cy: i32, cz: i32, radius: i32, mut place: F)
+fn carve_sphere<F>(lx: i32, ly: i32, lz: i32, radius: i32, mut place: F)
 where
     F: FnMut(i32, i32, i32),
 {
     let r2 = radius * radius;
 
-    for x in cx - radius..=cx + radius {
-        for y in cy - radius..=cy + radius {
-            for z in cz - radius..=cz + radius {
-                let dx = x - cx;
-                let dy = y - cy;
-                let dz = z - cz;
+    for x in lx - radius..=lx + radius {
+        for y in ly - radius..=ly + radius {
+            for z in lz - radius..=lz + radius {
+                let dx = x - lx;
+                let dy = y - ly;
+                let dz = z - lz;
 
                 if dx * dx + dy * dy + dz * dz <= r2 {
                     place(x, y, z);
@@ -254,6 +254,13 @@ pub fn do_chunk_generation(params: &mut ChunkGenerationParams) {
                 params.cx * 16 + lx as i32,
                 params.cz * 16 + lz as i32
             );
+
+            // go upwards!
+            for ly in heights[lx as usize][lz as usize]..320 {
+                params
+                    .chunk
+                    .set_block_local(lx, ly, lz, PaletteBlockKind::CobblestoneWall);
+            }
 
             // walls!
             for lx in lx - cave_carve_radius as u32..lx + cave_carve_radius as u32 {

@@ -59,9 +59,5 @@ entries!(
     // I hate block states now
     CobblestoneWall => 9783 => 13,
     CobblestoneWallXF => 9898 => 14,
-    CobblestoneWallXP => 9784 => 15,
-    CobblestoneWallXN => 9891 => 16,
-    CobblestoneWallZF => 9837 => 17,
-    CobblestoneWallZP => 9795 => 18,
-    CobblestoneWallZN => 9819 => 19
+    CobblestoneWallZF => 9837 => 15
 );

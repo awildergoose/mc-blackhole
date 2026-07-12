@@ -96,7 +96,8 @@ impl Chunk {
         let mut sections = Vec::with_capacity(32);
 
         for _ in 0..32 {
-            sections.push(Section::new(4, 4096));
+            // increase bits_per_entry whenever we need more palette slots
+            sections.push(Section::new(5, 4096));
         }
 
         Self { sections, x, z }
