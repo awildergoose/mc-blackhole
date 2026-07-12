@@ -1,7 +1,10 @@
+use uuid::Uuid;
+
 use crate::{
     codecs::{
         array::{Array, RemainingArray},
         enums::Enum,
+        lpvec3::LpVec3,
         position::Position,
         string8::String8,
     },
@@ -167,3 +170,16 @@ quickpkt!(cs_custom_payload, 0x15, channel => String, data => RemainingArray<u8>
 quickpkt!(cs_accept_teleportation, 0x00, id => u8);
 quickpkt!(cs_player_loaded, 0x2B);
 quickpkt!(cs_swing, 0x3C, hand => Enum<PlayerHand>);
+quickpkt!(sc_add_entity, 0x01,
+    id => VarInt,
+    uuid => Uuid,
+    kind => VarInt,
+    x => f64,
+    y => f64,
+    z => f64,
+    velocity => LpVec3,
+    pitch => u8,
+    yaw => u8,
+    head_yaw => u8,
+    data => VarInt
+);

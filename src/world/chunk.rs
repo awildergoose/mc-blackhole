@@ -7,70 +7,62 @@ use crate::{
 };
 use strum::IntoEnumIterator;
 
+#[derive(Clone)]
 struct Section {
-    data: Vec<u64>,
-
-    // DO NOT MUTATE THIS WITHOUT UPDATING `mask` AND `entries_per_long`
-    bits_per_entry: u32,
-    mask: u64,
-    entries_per_long: u32,
+    data: [u64; 256],
 }
 
+// increase this whenever we need more palette slots
+const BITS_PER_ENTRY: u32 = 4;
+const NUM_ENTRIES: u32 = 4096;
+const ENTRIES_PER_LONG: u32 = Section::entries_per_long();
+const MASK: u64 = Section::mask();
+const NUM_LONGS: usize = NUM_ENTRIES.div_ceil(ENTRIES_PER_LONG) as usize;
+
 impl Section {
-    fn new(bits_per_entry: u32, num_entries: u32) -> Self {
-        if STRICT {
-            debug_assert!(bits_per_entry != 0);
-        }
-
-        let entries_per_long = Self::entries_per_long(bits_per_entry);
-        let num_longs = num_entries.div_ceil(entries_per_long);
-
+    const fn new() -> Self {
         Self {
-            data: vec![0u64; num_longs as usize],
-            bits_per_entry,
-            mask: Self::mask(bits_per_entry),
-            entries_per_long,
+            data: [0u64; NUM_LONGS],
         }
     }
 
     #[inline]
+    const fn entries_per_long() -> u32 {
+        64 / BITS_PER_ENTRY
+    }
+
+    #[inline]
+    const fn mask() -> u64 {
+        (1u64 << BITS_PER_ENTRY) - 1
+    }
+
     const fn entry_index(x: u32, y: u32, z: u32) -> u32 {
         x + z * 16 + y * 256
     }
 
-    #[inline]
-    const fn entries_per_long(bits_per_entry: u32) -> u32 {
-        64 / bits_per_entry
-    }
-
-    #[inline]
-    const fn mask(bits_per_entry: u32) -> u64 {
-        (1u64 << bits_per_entry) - 1
-    }
-
-    fn get_at_index(&self, i: u32) -> u64 {
-        let epl = self.entries_per_long;
+    const fn get_at_index(&self, i: u32) -> u64 {
+        let epl = ENTRIES_PER_LONG;
         let long_index = (i / epl) as usize;
-        let bit_index = (i % epl) * self.bits_per_entry;
+        let bit_index = (i % epl) * BITS_PER_ENTRY;
 
-        (self.data[long_index] >> bit_index) & self.mask
+        (self.data[long_index] >> bit_index) & MASK
     }
 
-    fn set_at_index(&mut self, i: u32, value: u64) {
-        let epl = self.entries_per_long;
+    const fn set_at_index(&mut self, i: u32, value: u64) {
+        let epl = ENTRIES_PER_LONG;
         let long_index = (i / epl) as usize;
-        let bit_index = (i % epl) * self.bits_per_entry;
+        let bit_index = (i % epl) * BITS_PER_ENTRY;
 
-        let m = self.mask;
+        let m = MASK;
         self.data[long_index] &= !(m << bit_index);
         self.data[long_index] |= (value & m) << bit_index;
     }
 
-    pub fn get_block(&self, x: u32, y: u32, z: u32) -> u64 {
+    pub const fn get_block(&self, x: u32, y: u32, z: u32) -> u64 {
         self.get_at_index(Self::entry_index(x, y, z))
     }
 
-    pub fn set_block(&mut self, x: u32, y: u32, z: u32, value: u64) {
+    pub const fn set_block(&mut self, x: u32, y: u32, z: u32, value: u64) {
         self.set_at_index(Self::entry_index(x, y, z), value);
     }
 }
@@ -93,14 +85,11 @@ pub struct Chunk {
 impl Chunk {
     #[must_use]
     pub fn new(x: i32, z: i32) -> Self {
-        let mut sections = Vec::with_capacity(32);
-
-        for _ in 0..32 {
-            // increase bits_per_entry whenever we need more palette slots
-            sections.push(Section::new(5, 4096));
+        Self {
+            sections: vec![Section::new(); 32],
+            x,
+            z,
         }
-
-        Self { sections, x, z }
     }
 
     const fn get_height_difference() -> i32 {
@@ -150,13 +139,13 @@ impl Chunk {
 
             // block stuff
             let section = &self.sections[sy];
-            data_bytes.put_u8(section.bits_per_entry as u8)?;
+            data_bytes.put_u8(BITS_PER_ENTRY as u8)?;
             let pal = PaletteBlockKind::iter()
                 .map(|k| EncodedVarInt(k.as_minecraft_id() as i32))
                 .collect::<Vec<EncodedVarInt>>();
             data_bytes.put_array(pal)?;
 
-            let mut packed = Vec::with_capacity(section.data.len() * 8);
+            let mut packed = Vec::with_capacity(section.data.len() * size_of::<u64>());
 
             for &x in &section.data {
                 packed.extend_from_slice(&x.to_be_bytes());

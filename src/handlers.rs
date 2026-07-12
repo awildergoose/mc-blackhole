@@ -603,6 +603,12 @@ pub async fn handle_connection(
                                 continue;
                             }
 
+                            if command == "ghost" {
+                                // 151
+                                
+                                continue;
+                            }
+
                             // System Chat Message
                             body = PacketBytes::new();
                             body.put_u8(0x08)?; // TAG_String
