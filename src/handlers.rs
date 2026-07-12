@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use cgmath::Vector3;
+use rand::RngExt;
 use tokio::{runtime::Handle, sync::RwLock};
 
 use crate::{
@@ -118,7 +119,12 @@ pub async fn handle_connection(
     level
         .set_block_perma(0, 0, 0, PaletteBlockKind::Grass)
         .await?;
-    level.add_entity(StructureEntity::new(Vector3::new(0, 50, 0)));
+    let mut rng = level.make_rng(100);
+    level.add_entity(StructureEntity::new(Vector3::new(
+        rng.random_range(-2048..2048),
+        rng.random_range(-64..318),
+        rng.random_range(-2048..2048),
+    )));
 
     let (worker, world) = WorldWorker::new(level);
     let _guard = StopWorldOnDrop(world.clone());

@@ -1,6 +1,7 @@
 use std::any::Any;
 
 use cgmath::{MetricSpace, Vector2, Vector3};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 use crate::{
     AsyncTraitFn, async_trait_fn,
@@ -15,6 +16,8 @@ pub struct StructureEntity {
     base: EntityBase,
     position: Vector3<i32>,
     our_patches: Vec<(Vector2<i32>, u64)>,
+    rng: StdRng,
+    seeded: bool,
 }
 
 impl StructureEntity {
@@ -24,6 +27,8 @@ impl StructureEntity {
             base: EntityBase::default(),
             position,
             our_patches: vec![],
+            rng: StdRng::seed_from_u64(0),
+            seeded: false,
         }
     }
 }
@@ -43,6 +48,10 @@ impl Entity for StructureEntity {
 
     fn tick<'a>(&'a mut self, level: &'a mut Level) -> AsyncTraitFn<'a, anyhow::Result<()>> {
         async_trait_fn!({
+            if !self.seeded {
+                self.rng = level.make_rng(112);
+                self.seeded = true;
+            }
             // if !level.tick_counter.is_multiple_of(4) {
             //     return Ok(());
             // }
@@ -123,7 +132,7 @@ impl Entity for StructureEntity {
                 -Vector3::unit_z(),
             ];
 
-            if rand::random_bool(0.5) {
+            if self.rng.random_bool(0.1) {
                 let player = *level
                     .players
                     .first()
@@ -156,11 +165,11 @@ impl Entity for StructureEntity {
                     best_position.z as i32,
                 );
             } else {
-                let pick = possible[rand::random_range(0..possible.len())];
+                let pick = possible[self.rng.random_range(0..possible.len())];
                 self.position += Vector3::new(pick.x as i32, pick.y as i32, pick.z as i32);
             }
 
-            self.position.y = self.position.y.clamp(-64, 319);
+            self.position.y = self.position.y.clamp(-64, 318);
 
             let idx = level
                 .set_block_perma(

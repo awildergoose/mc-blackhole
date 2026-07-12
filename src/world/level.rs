@@ -105,6 +105,11 @@ impl Level {
         }
     }
 
+    #[must_use]
+    pub fn make_rng(&self, offset: u64) -> StdRng {
+        StdRng::seed_from_u64(self.seed + offset)
+    }
+
     pub fn add_player(&mut self, entity: PlayerEntity) -> EntityId {
         let id = self.add_entity(entity);
         self.players.push(id);
