@@ -160,6 +160,8 @@ impl Entity for StructureEntity {
                 self.position += Vector3::new(pick.x as i32, pick.y as i32, pick.z as i32);
             }
 
+            self.position.y = self.position.y.clamp(-64, 319);
+
             let idx = level
                 .set_block_perma(
                     self.position.x,
