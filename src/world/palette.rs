@@ -1,67 +1,67 @@
-use strum_macros::EnumIter;
+macro_rules! entries {
+    ($($name:expr => $id:expr => $idx:expr),*) => {
+        paste::paste! {
+            use strum_macros::EnumIter;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, EnumIter)]
-pub enum PaletteBlockKind {
-    Air,
-    Stone,
-    Bedrock,
-    OakLog,
-    OakPlanks,
-    Deepslate,
-    Andesite,
-    Diorite,
-    Dirt,
-    Grass,
+            #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, EnumIter)]
+            pub enum PaletteBlockKind {
+                $($name),*
+            }
+
+            impl PaletteBlockKind {
+                #[must_use]
+                pub const fn as_minecraft_id(&self) -> u64 {
+                    match self {
+                        $(
+                            Self::$name => $id
+                        ),*
+                    }
+                }
+
+                #[must_use]
+                pub const fn as_palette_index(&self) -> u64 {
+                    match self {
+                        $(
+                            Self::$name => $idx
+                        ),*
+                    }
+                }
+
+                #[must_use]
+                pub fn from_palette_index(index: u64) -> Self {
+                    match index {
+                        $(
+                            $idx => Self::$name
+                        ),*,
+                        _ => unreachable!("bad palette index"),
+                    }
+                }
+            }
+        }
+    };
 }
 
-impl PaletteBlockKind {
-    #[must_use]
-    pub const fn as_minecraft_id(&self) -> u64 {
-        match self {
-            Self::Air => 0,
-            Self::Stone => 1,
-            Self::Bedrock => 85,
-            Self::OakLog => 137,
-            Self::OakPlanks => 15,
-            Self::Deepslate => 27722,
-            Self::Andesite => 6,
-            Self::Diorite => 4,
-            Self::Dirt => 10,
-            Self::Grass => 9,
-        }
-    }
+entries!(
+    Air => 0 => 0,
+    Stone => 1 => 1,
+    Bedrock => 85 => 2,
+    OakLog => 137 => 3,
+    OakPlanks => 15 => 4,
+    Deepslate => 27722 => 5,
+    Andesite => 6 => 6,
+    Diorite => 4 => 7,
+    Dirt => 10 => 8,
+    Grass => 9 => 9,
+    Granite => 2 => 10,
+    Cobblestone => 14 => 11,
+    GoldBlock => 2137 => 12,
 
-    #[must_use]
-    pub const fn as_palette_index(&self) -> u64 {
-        // TODO: improve this
-        match self {
-            Self::Air => 0,
-            Self::Stone => 1,
-            Self::Bedrock => 2,
-            Self::OakLog => 3,
-            Self::OakPlanks => 4,
-            Self::Deepslate => 5,
-            Self::Andesite => 6,
-            Self::Diorite => 7,
-            Self::Dirt => 8,
-            Self::Grass => 9,
-        }
-    }
-
-    #[must_use]
-    pub fn from_palette_index(index: u64) -> Self {
-        match index {
-            0 => Self::Air,
-            1 => Self::Stone,
-            2 => Self::Bedrock,
-            3 => Self::OakLog,
-            4 => Self::OakPlanks,
-            5 => Self::Deepslate,
-            6 => Self::Andesite,
-            7 => Self::Diorite,
-            8 => Self::Dirt,
-            9 => Self::Grass,
-            _ => unreachable!("bad palette index"),
-        }
-    }
-}
+    // I hate block states now
+    CobblestoneWall => 9783 => 13,
+    CobblestoneWallXF => 9898 => 14,
+    CobblestoneWallXP => 9784 => 15,
+    CobblestoneWallXN => 9891 => 16,
+    CobblestoneWallZF => 9837 => 17,
+    CobblestoneWallZP => 9795 => 18,
+    CobblestoneWallZN => 9819 => 19
+);

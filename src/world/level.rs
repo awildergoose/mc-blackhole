@@ -91,7 +91,7 @@ pub struct Level {
 impl Level {
     #[must_use]
     pub fn new(view_distance: i32) -> Self {
-        let seed = rand::random();
+        let seed = 69420; //rand::random();
 
         Self {
             entities: vec![],
