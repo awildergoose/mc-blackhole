@@ -115,7 +115,7 @@ impl Level {
         let mut rng = self.make_rng(19);
         Vector3::new(
             rng.random_range(-4096.0..4096.0),
-            rng.random_range(32.0..96.0),
+            rng.random_range(45.0..96.0),
             rng.random_range(-4096.0..4096.0),
         )
     }
