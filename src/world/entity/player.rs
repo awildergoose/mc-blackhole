@@ -195,21 +195,21 @@ impl Entity for PlayerEntity {
             // borders, and then it reloads them, which would be inefficient
             let mut to_forget = vec![];
 
-            self.sent_chunks.retain(|chunk| {
-                let dx = chunk.x - player_chunk.x;
-                let dz = chunk.y - player_chunk.y;
-
-                dx.abs() <= radius && dz.abs() <= radius
-            });
             level.chunks.retain(|pos, _chunk| {
                 let dx = pos.x - player_chunk.x;
                 let dz = pos.y - player_chunk.y;
 
                 let res = dx.abs() <= radius && dz.abs() <= radius;
-                if !res {
+                if !res && self.sent_chunks.contains(pos) {
                     to_forget.push(*pos);
                 }
                 res
+            });
+            self.sent_chunks.retain(|chunk| {
+                let dx = chunk.x - player_chunk.x;
+                let dz = chunk.y - player_chunk.y;
+
+                dx.abs() <= radius && dz.abs() <= radius
             });
 
             for pos in to_forget {
