@@ -1,9 +1,9 @@
 macro_rules! entries {
     ($($name:expr => $id:expr => $idx:expr),*) => {
         paste::paste! {
-            use strum_macros::EnumIter;
+            use crate::proto::varint::EncodedVarInt;
 
-            #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, EnumIter)]
+            #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
             pub enum PaletteBlockKind {
                 $($name),*
             }
@@ -35,6 +35,15 @@ macro_rules! entries {
                         ),*,
                         _ => unreachable!("bad palette index"),
                     }
+                }
+
+                #[must_use]
+                pub fn entries() -> Vec<EncodedVarInt> {
+                    vec![
+                        $(
+                            EncodedVarInt($id)
+                        ),*
+                    ]
                 }
             }
         }

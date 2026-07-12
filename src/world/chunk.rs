@@ -1,11 +1,6 @@
 use std::hash::{DefaultHasher, Hasher};
 
-use crate::{
-    STRICT,
-    proto::{packet_bytes::PacketBytes, varint::EncodedVarInt},
-    world::palette::PaletteBlockKind,
-};
-use strum::IntoEnumIterator;
+use crate::{STRICT, proto::packet_bytes::PacketBytes, world::palette::PaletteBlockKind};
 
 #[derive(Clone)]
 struct Section {
@@ -140,9 +135,7 @@ impl Chunk {
             // block stuff
             let section = &self.sections[sy];
             data_bytes.put_u8(BITS_PER_ENTRY as u8)?;
-            let pal = PaletteBlockKind::iter()
-                .map(|k| EncodedVarInt(k.as_minecraft_id() as i32))
-                .collect::<Vec<EncodedVarInt>>();
+            let pal = PaletteBlockKind::entries();
             data_bytes.put_array(pal)?;
 
             let mut packed = Vec::with_capacity(section.data.len() * size_of::<u64>());
