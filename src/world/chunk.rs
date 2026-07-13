@@ -73,7 +73,7 @@ pub fn determine_chunk_seed(world_seed: u64, cx: i32, cz: i32) -> u64 {
 }
 
 pub struct Chunk {
-    sections: Vec<Section>,
+    sections: Vec<Option<Section>>,
     x: i32,
     z: i32,
 }
@@ -82,7 +82,7 @@ impl Chunk {
     #[must_use]
     pub fn new(x: i32, z: i32) -> Self {
         Self {
-            sections: vec![Section::new(); NUM_SECTIONS],
+            sections: vec![None; NUM_SECTIONS],
             x,
             z,
         }
@@ -103,7 +103,8 @@ impl Chunk {
         let sy = (cy / 16) as usize;
         let ly = (cy & 15) as u32;
 
-        self.sections[sy].set_block(lx, ly, lz, value.as_palette_index());
+        let sec = self.sections[sy].get_or_insert_with(Section::new);
+        sec.set_block(lx, ly, lz, value.as_palette_index());
     }
 
     #[must_use]
@@ -118,7 +119,11 @@ impl Chunk {
         let sy = (cy / 16) as usize;
         let ly = (cy & 15) as u32;
 
-        PaletteBlockKind::from_palette_index(self.sections[sy].get_block(lx, ly, lz))
+        self.sections[sy]
+            .as_ref()
+            .map_or(PaletteBlockKind::Air, |sec| {
+                PaletteBlockKind::from_palette_index(sec.get_block(lx, ly, lz))
+            })
     }
 
     pub fn encode(&self) -> anyhow::Result<PacketBytes> {
@@ -129,23 +134,26 @@ impl Chunk {
         chkbody.put_var_int(0)?; // no heightmaps
 
         let mut data_bytes = PacketBytes::new();
+        let zeroes = vec![0; NUM_LONGS * size_of::<u64>()];
 
         for sy in 0..NUM_SECTIONS {
             data_bytes.put_u16(4096)?; // block count, this doesn't matter as long as it's over 0
+            data_bytes.put_u8(BITS_PER_ENTRY as u8)?;
 
             // block stuff
-            let section = &self.sections[sy];
-            data_bytes.put_u8(BITS_PER_ENTRY as u8)?;
             let pal = PaletteBlockKind::entries();
             data_bytes.put_array(pal)?;
 
-            let mut packed = Vec::with_capacity(section.data.len() * size_of::<u64>());
-
-            for &x in &section.data {
-                packed.extend_from_slice(&x.to_be_bytes());
+            match &self.sections[sy] {
+                Some(section) => {
+                    for &v in &section.data {
+                        data_bytes.extend_from_slice(&v.to_be_bytes());
+                    }
+                }
+                None => {
+                    data_bytes.extend_from_slice(&zeroes);
+                }
             }
-
-            data_bytes.extend_from_slice(&packed);
 
             // biome stuff
             data_bytes.put_u8(0)?;
