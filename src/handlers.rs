@@ -19,7 +19,6 @@ use crate::{
                 cs_select_known_packs::CsSelectKnownPacks,
                 sc_finish_configuration::ScFinishConfiguration, sc_registries::ScRegistries,
                 sc_select_known_packs::ScSelectKnownPacks, sc_tags::ScTags,
-                sc_update_enabled_features::ScUpdateEnabledFeatures,
             },
             handshake::cs_intention::CsIntention,
             login::{
@@ -105,7 +104,9 @@ pub async fn handle_connection(
     let mut client_tick = 0;
     let mut body;
     let mut level = Level::new(8);
-    let player = level.add_player(PlayerEntity::new(writer.clone()));
+    // we only add the player when state turns into Play, just a simple check
+    // to prevent basic attacks from throttling our server resources.
+    let mut player = usize::MAX;
 
     level
         .add_metaball(
@@ -160,11 +161,6 @@ pub async fn handle_connection(
                 match current_state {
                     ConnectionState::Login => {
                         if id == CsLoginAcknowledged::ID {
-                            writer
-                                .write_pkt(ScUpdateEnabledFeatures {
-                                    features: vec!["minecraft:vanilla".to_owned()],
-                                })
-                                .await?;
                             writer
                                 .write_pkt(ScSelectKnownPacks {
                                     features: vec![KnownPack::new(
@@ -331,6 +327,8 @@ pub async fn handle_connection(
                             // keep alive
                             writer.write_pkt(ScKeepAlive::new(1)).await?;
 
+                            player = world.add_player(PlayerEntity::new(writer.clone())).await?;
+
                             {
                                 *state.write().await = ConnectionState::Play;
                             }
@@ -355,7 +353,8 @@ pub async fn handle_connection(
                         }
 
                         if id == CsClientTickEnd::ID {
-                            if client_tick % 20 == 0 {
+                            // every 12 seconds
+                            if client_tick % (20 * 13) == 0 {
                                 writer.write_pkt(ScKeepAlive::new(1)).await?;
                             }
 

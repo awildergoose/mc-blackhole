@@ -32,6 +32,10 @@ pub enum WorldRequest {
         digger: EntityId,
         respond: oneshot::Sender<Vector3<i32>>,
     },
+    AddPlayer {
+        player: PlayerEntity,
+        respond: oneshot::Sender<EntityId>,
+    },
 
     UpdatePlayerPosition {
         player: EntityId,
@@ -93,6 +97,7 @@ impl WorldHandle {
     makegetalias!(GetPlayerFlying, bool, player => EntityId);
     makegetalias!(GetPlayerGameMode, GameMode, player => EntityId);
     makegetalias!(GetDiggerPosition, Vector3<i32>, digger => EntityId);
+    makegetalias!(AddPlayer, EntityId, player => PlayerEntity);
 
     pub async fn send(&self, request: WorldRequest) -> anyhow::Result<()> {
         self.tx.send(request).await?;
@@ -157,6 +162,9 @@ impl WorldWorker {
                             })
                             .await?,
                     );
+                }
+                WorldRequest::AddPlayer { player, respond } => {
+                    let _ = respond.send(self.level.add_player(player));
                 }
 
                 WorldRequest::UpdatePlayerPosition { player, position } => {
