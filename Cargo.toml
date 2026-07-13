@@ -5,8 +5,8 @@ edition = "2024"
 
 [dependencies]
 generics_macro = { path = "./generics_macro" }
-anyhow = "1.0.102"
-bytes = "1.11.1"
+anyhow = "1.0.103"
+bytes = "1.12.1"
 flate2 = { version = "1.1.9", features = ["zlib-rs"], default-features = false }
 paste = "1.0.15"
 tokio = { version = "1.52.3", features = [
@@ -17,11 +17,11 @@ tokio = { version = "1.52.3", features = [
     "time",
     "io-util",
 ] }
-uuid = { version = "1.23.2", features = ["v4"] }
+uuid = { version = "1.23.5", features = ["v4"] }
 cgmath = { version = "0.18.0", features = [
     "swizzle",
 ], default-features = false }
-rand = "0.10.1"
+rand = "0.10.2"
 noise = { version = "0.9.0", features = ["std"] }
 
 # Full performance profile because why not lol
