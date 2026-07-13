@@ -1,15 +1,19 @@
 use std::{any::Any, collections::HashSet};
 
-use cgmath::{Vector2, Vector3};
+use cgmath::{MetricSpace, Vector2, Vector3};
 use tokio::task::JoinSet;
 
 use crate::{
     AsyncTraitFn, async_trait_fn,
     net::handles::PacketWriterHandle,
-    proto::packets::play::{
-        GameMode, sc_chunk_batch_finished::ScChunkBatchFinished,
-        sc_chunk_batch_start::ScChunkBatchStart, sc_forget_level_chunk::ScForgetLevelChunk,
-        sc_level_chunk_with_light::ScLevelChunkWithLight, sc_set_center_chunk::ScSetCenterChunk,
+    proto::{
+        packet_bytes::PacketBytes,
+        packets::play::{
+            GameMode, sc_chunk_batch_finished::ScChunkBatchFinished,
+            sc_chunk_batch_start::ScChunkBatchStart, sc_forget_level_chunk::ScForgetLevelChunk,
+            sc_level_chunk_with_light::ScLevelChunkWithLight,
+            sc_set_center_chunk::ScSetCenterChunk,
+        },
     },
     world::{
         entity::{Entity, EntityBase},
@@ -19,6 +23,7 @@ use crate::{
 
 pub struct PlayerEntity {
     base: EntityBase,
+    pub prev_position: Vector3<f64>,
     pub position: Vector3<f64>,
     sent_chunks: HashSet<ChunkPos>,
     chunk_queue: Vec<ChunkPos>,
@@ -32,6 +37,7 @@ impl PlayerEntity {
     pub fn new(packet_writer: PacketWriterHandle) -> Self {
         Self {
             base: EntityBase::default(),
+            prev_position: Vector3::new(0.0, 0.0, 0.0),
             position: Vector3::new(0.0, 0.0, 0.0),
             sent_chunks: HashSet::new(),
             chunk_queue: Vec::new(),
@@ -55,6 +61,17 @@ impl PlayerEntity {
     pub fn has_seen_chunk(&self, pos: ChunkPos) -> bool {
         self.sent_chunks.contains(&pos)
     }
+
+    pub async fn kick(&self, reason: String) -> anyhow::Result<()> {
+        let mut body = PacketBytes::new();
+        body.put_u8(0x08)?; // TAG_String
+        body.put_u8(0x00)?; // TAG_END?
+        body.put_string(reason)?;
+
+        self.packet_writer.write_packet(0x20, body.to_vec()).await?;
+
+        Ok(())
+    }
 }
 
 impl Entity for PlayerEntity {
@@ -73,6 +90,16 @@ impl Entity for PlayerEntity {
     #[expect(clippy::too_many_lines)]
     fn tick<'a>(&'a mut self, level: &'a mut Level) -> AsyncTraitFn<'a, anyhow::Result<()>> {
         async_trait_fn!({
+            // can you please not cheat, that'd be great :)
+            if self.prev_position.xz().distance2(self.position.xz()) >= 2.0
+                && !self.game_mode.can_fly()
+            {
+                // roblox work at a pizza place angry sound effect
+                self.kick(">:(".to_owned()).await?;
+                return Ok(());
+            }
+            self.prev_position = self.position;
+
             let mut has_sent_chunks = false;
             let center_x = (self.position.x / 16.0).floor() as i32;
             let center_z = (self.position.z / 16.0).floor() as i32;

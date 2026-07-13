@@ -327,7 +327,10 @@ pub async fn handle_connection(
                             // keep alive
                             writer.write_pkt(ScKeepAlive::new(1)).await?;
 
-                            player = world.add_player(PlayerEntity::new(writer.clone())).await?;
+                            let mut pe = PlayerEntity::new(writer.clone());
+                            pe.position = world_spawn;
+                            pe.prev_position = world_spawn;
+                            player = world.add_player(pe).await?;
 
                             {
                                 *state.write().await = ConnectionState::Play;

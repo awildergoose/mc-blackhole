@@ -183,3 +183,13 @@ quickpkt!(sc_add_entity, 0x01,
     head_yaw => u8,
     data => VarInt
 );
+
+impl GameMode {
+    #[must_use]
+    pub const fn can_fly(&self) -> bool {
+        match self {
+            Self::Survival | Self::Adventure => false,
+            Self::Creative | Self::Spectator => true,
+        }
+    }
+}
