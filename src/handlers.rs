@@ -356,8 +356,8 @@ pub async fn handle_connection(
                         }
 
                         if id == CsClientTickEnd::ID {
-                            // every 12 seconds
-                            if client_tick % (20 * 13) == 0 {
+                            // every 10 seconds
+                            if client_tick % (20 * 10) == 0 {
                                 writer.write_pkt(ScKeepAlive::new(1)).await?;
                             }
 
