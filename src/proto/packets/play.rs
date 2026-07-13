@@ -4,6 +4,7 @@ use crate::{
     codecs::{
         array::{Array, RemainingArray},
         enums::Enum,
+        itemstack::ItemStack,
         lpvec3::LpVec3,
         position::Position,
         string8::String8,
@@ -183,6 +184,8 @@ quickpkt!(sc_add_entity, 0x01,
     head_yaw => u8,
     data => VarInt
 );
+
+quickpkt!(cs_set_creative_mode_slot, 0x37, slot => i16, item => ItemStack);
 
 impl GameMode {
     #[must_use]

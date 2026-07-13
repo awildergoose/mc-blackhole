@@ -1,15 +1,19 @@
-use std::{any::Any, collections::HashSet};
+use std::{
+    any::Any,
+    collections::{HashMap, HashSet},
+};
 
 use cgmath::{MetricSpace, Vector2, Vector3};
 use tokio::task::JoinSet;
 
 use crate::{
     AsyncTraitFn, async_trait_fn,
+    codecs::itemstack::ItemStack,
     net::handles::PacketWriterHandle,
     proto::{
         packet_bytes::PacketBytes,
         packets::play::{
-            GameMode, sc_chunk_batch_finished::ScChunkBatchFinished,
+            GameMode, PlayerHand, sc_chunk_batch_finished::ScChunkBatchFinished,
             sc_chunk_batch_start::ScChunkBatchStart, sc_forget_level_chunk::ScForgetLevelChunk,
             sc_level_chunk_with_light::ScLevelChunkWithLight,
             sc_set_center_chunk::ScSetCenterChunk,
@@ -21,15 +25,19 @@ use crate::{
     },
 };
 
+pub type Item = i32;
+
 pub struct PlayerEntity {
     base: EntityBase,
-    pub prev_position: Vector3<f64>,
-    pub position: Vector3<f64>,
     sent_chunks: HashSet<ChunkPos>,
     chunk_queue: Vec<ChunkPos>,
+    pub prev_position: Vector3<f64>,
+    pub position: Vector3<f64>,
     pub packet_writer: PacketWriterHandle,
     pub flying: bool,
     pub game_mode: GameMode,
+    pub inventory: HashMap<u8, ItemStack>,
+    pub carried_slot: u8,
 }
 
 impl PlayerEntity {
@@ -44,6 +52,8 @@ impl PlayerEntity {
             packet_writer,
             flying: false,
             game_mode: GameMode::Survival,
+            inventory: HashMap::new(),
+            carried_slot: 0,
         }
     }
 
@@ -71,6 +81,18 @@ impl PlayerEntity {
         self.packet_writer.write_packet(0x20, body.to_vec()).await?;
 
         Ok(())
+    }
+
+    #[must_use]
+    pub fn get_item_in_hand(&self, _hand: PlayerHand) -> ItemStack {
+        self.inventory
+            .get(&(self.carried_slot + 36))
+            .unwrap_or(&ItemStack::empty())
+            .clone()
+    }
+
+    pub fn set_inventory_item(&mut self, slot: u8, item: ItemStack) {
+        self.inventory.insert(slot, item);
     }
 }
 

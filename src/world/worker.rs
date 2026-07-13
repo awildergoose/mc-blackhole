@@ -2,7 +2,8 @@ use cgmath::Vector3;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::{
-    proto::packets::play::GameMode,
+    codecs::itemstack::ItemStack,
+    proto::packets::play::{GameMode, PlayerHand},
     world::{
         entity::{player::PlayerEntity, structure::StructureEntity},
         level::{EntityId, Level},
@@ -24,6 +25,11 @@ pub enum WorldRequest {
     GetPlayerGameMode {
         player: EntityId,
         respond: oneshot::Sender<GameMode>,
+    },
+    GetPlayerItemInHand {
+        player: EntityId,
+        hand: PlayerHand,
+        respond: oneshot::Sender<ItemStack>,
     },
     GetWorldSpawnPosition {
         respond: oneshot::Sender<Vector3<f64>>,
@@ -54,6 +60,15 @@ pub enum WorldRequest {
     UpdatePlayerGameMode {
         player: EntityId,
         game_mode: GameMode,
+    },
+    UpdatePlayerSlot {
+        player: EntityId,
+        slot: u8,
+    },
+    UpdatePlayerInventory {
+        player: EntityId,
+        slot: u8,
+        item: ItemStack,
     },
     AddMetaball {
         position: Vector3<i32>,
@@ -102,6 +117,7 @@ impl WorldHandle {
     makegetalias!(GetPlayerPosition, Vector3<f64>, player => EntityId);
     makegetalias!(GetPlayerFlying, bool, player => EntityId);
     makegetalias!(GetPlayerGameMode, GameMode, player => EntityId);
+    makegetalias!(GetPlayerItemInHand, ItemStack, player => EntityId, hand => PlayerHand);
     makegetalias!(GetDiggerPosition, Vector3<i32>, digger => EntityId);
     makegetalias!(AddPlayer, EntityId, player => PlayerEntity);
 
@@ -124,6 +140,7 @@ impl WorldWorker {
         (Self { level, rx }, WorldHandle { tx })
     }
 
+    #[expect(clippy::too_many_lines)]
     pub async fn run(mut self) -> anyhow::Result<()> {
         while let Some(request) = self.rx.recv().await {
             match request {
@@ -156,6 +173,26 @@ impl WorldWorker {
                             })
                             .await?,
                     );
+                }
+                WorldRequest::GetPlayerItemInHand {
+                    player,
+                    hand,
+                    respond,
+                } => {
+                    let _ = respond.send(
+                        self.level
+                            .with_entity::<PlayerEntity, _, _>(player, |_level, player| {
+                                player.get_item_in_hand(hand)
+                            })
+                            .await?,
+                    );
+                }
+                WorldRequest::UpdatePlayerInventory { player, slot, item } => {
+                    self.level
+                        .with_entity_mut::<PlayerEntity, _, _>(player, |_level, player| {
+                            player.set_inventory_item(slot, item);
+                        })
+                        .await?;
                 }
                 WorldRequest::GetWorldSpawnPosition { respond } => {
                     let _ = respond.send(self.level.get_spawn_position());
@@ -198,6 +235,13 @@ impl WorldWorker {
                     self.level
                         .with_entity_mut::<PlayerEntity, _, _>(player, |_, p| {
                             p.game_mode = game_mode;
+                        })
+                        .await?;
+                }
+                WorldRequest::UpdatePlayerSlot { player, slot } => {
+                    self.level
+                        .with_entity_mut::<PlayerEntity, _, _>(player, |_, p| {
+                            p.carried_slot = slot;
                         })
                         .await?;
                 }

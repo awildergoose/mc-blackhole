@@ -10,10 +10,13 @@
 #![feature(optimize_attribute)]
 
 pub mod codecs;
+pub mod generated;
 pub mod handlers;
 pub mod net;
 pub mod proto;
 pub mod server;
+#[cfg(test)]
+mod tests;
 pub mod world;
 
 pub const STRICT: bool = false;

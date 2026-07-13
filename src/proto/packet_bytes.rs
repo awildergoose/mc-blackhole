@@ -10,6 +10,7 @@ use crate::{
         base::{MCDecode, MCEncode},
         enums::Enum,
         game_profile::GameProfile,
+        itemstack::ItemStack,
         lpvec3::LpVec3,
         position::Position,
     },
@@ -175,6 +176,14 @@ impl PacketBytes {
 
     pub fn get_lp_vec3(&mut self) -> GetRes<LpVec3> {
         LpVec3::decode(self)
+    }
+
+    pub fn put_item_stack(&mut self, stack: ItemStack) -> PutRes {
+        stack.encode(self)
+    }
+
+    pub fn get_item_stack(&mut self) -> GetRes<ItemStack> {
+        ItemStack::decode(self)
     }
 }
 

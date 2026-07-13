@@ -5,8 +5,9 @@ use rand::RngExt;
 use tokio::{runtime::Handle, sync::RwLock};
 
 use crate::{
-    codecs::{base::MCDecode, game_profile::GameProfile},
+    codecs::{base::MCDecode, game_profile::GameProfile, position::Position},
     expect_packet,
+    generated::registries::ITEM_TO_BLOCK,
     net::{framing::FramedConnRead, handles::PacketWriterHandle},
     proto::{
         packet_bytes::PacketBytes,
@@ -26,8 +27,8 @@ use crate::{
                 sc_login_success::ScLoginSuccess, sc_set_compression::ScSetCompression,
             },
             play::{
-                ByteGameMode, EntityEvent, GameEvent, GameMode, PlayerActionStatus,
-                cs_accept_teleportation::CsAcceptTeleportation,
+                ByteGameMode, EntityEvent, GameEvent, GameMode, PlayerActionFace,
+                PlayerActionStatus, cs_accept_teleportation::CsAcceptTeleportation,
                 cs_change_game_mode::CsChangeGameMode, cs_chat_command::CsChatCommand,
                 cs_chunk_batch_received::CsChunkBatchReceived, cs_client_tick_end::CsClientTickEnd,
                 cs_custom_payload::CsCustomPayload, cs_keep_alive::CsKeepAlive,
@@ -36,10 +37,10 @@ use crate::{
                 cs_player_abilities::CsPlayerAbilities, cs_player_action::CsPlayerAction,
                 cs_player_command::CsPlayerCommand, cs_player_input::CsPlayerInput,
                 cs_player_loaded::CsPlayerLoaded, cs_set_carried_item::CsSetCarriedItem,
-                cs_swing::CsSwing, cs_use_item_on::CsUseItemOn,
-                sc_block_changed_ack::ScBlockChangedAck, sc_block_update::ScBlockUpdate,
-                sc_entity_event::ScEntityEvent, sc_game_event::ScGameEvent,
-                sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
+                cs_set_creative_mode_slot::CsSetCreativeModeSlot, cs_swing::CsSwing,
+                cs_use_item_on::CsUseItemOn, sc_block_changed_ack::ScBlockChangedAck,
+                sc_block_update::ScBlockUpdate, sc_entity_event::ScEntityEvent,
+                sc_game_event::ScGameEvent, sc_keep_alive::ScKeepAlive, sc_login::ScLogin,
                 sc_player_abilities::ScPlayerAbilities, sc_player_position::ScPlayerPosition,
                 sc_plugin_message::ScPluginMessage, sc_set_center_chunk::ScSetCenterChunk,
             },
@@ -344,7 +345,6 @@ pub async fn handle_connection(
                             || id == CsPlayerInput::ID
                             || id == CsPlayerCommand::ID
                             || id == CsChunkBatchReceived::ID
-                            || id == CsSetCarriedItem::ID
                             || id == CsCustomPayload::ID
                             || id == CsAcceptTeleportation::ID
                             || id == CsPlayerLoaded::ID
@@ -355,6 +355,10 @@ pub async fn handle_connection(
                             continue;
                         }
 
+                        if id == CsKeepAlive::ID {
+                            continue;
+                        }
+
                         if id == CsClientTickEnd::ID {
                             // every 10 seconds
                             if client_tick % (20 * 10) == 0 {
@@ -362,10 +366,6 @@ pub async fn handle_connection(
                             }
 
                             client_tick += 1;
-                            continue;
-                        }
-
-                        if id == CsKeepAlive::ID {
                             continue;
                         }
 
@@ -406,8 +406,43 @@ pub async fn handle_connection(
                         if id == CsUseItemOn::ID {
                             let pkt = CsUseItemOn::decode(&mut data)?;
                             let seq = pkt.sequence;
+                            let item = world
+                                .get_player_item_in_hand(player, pkt.hand)
+                                .await?
+                                .item
+                                .unwrap_or(0);
+                            if item == 0 {
+                                continue;
+                            }
 
-                            // no blocks to place anyways!
+                            let block = *ITEM_TO_BLOCK.get(&item).unwrap_or(&0);
+                            let face = pkt.face;
+                            let (mut x, mut y, mut z) = pkt.location.decoded();
+
+                            match face {
+                                PlayerActionFace::PX => {
+                                    x += 1;
+                                }
+                                PlayerActionFace::PY => {
+                                    y += 1;
+                                }
+                                PlayerActionFace::PZ => {
+                                    z += 1;
+                                }
+                                PlayerActionFace::NX => {
+                                    x -= 1;
+                                }
+                                PlayerActionFace::NY => {
+                                    y -= 1;
+                                }
+                                PlayerActionFace::NZ => {
+                                    z -= 1;
+                                }
+                            }
+
+                            writer
+                                .write_pkt(ScBlockUpdate::new(Position::from_pos(x, y, z), block))
+                                .await?;
                             writer.write_pkt(ScBlockChangedAck::new(seq)).await?;
                             continue;
                         }
@@ -461,6 +496,34 @@ pub async fn handle_connection(
                                     game_mode: pkt.game_mode,
                                 })
                                 .await?;
+                            continue;
+                        }
+
+                        if id == CsSetCarriedItem::ID {
+                            let pkt = CsSetCarriedItem::decode(&mut data)?;
+                            let slot = pkt.slot as u8;
+
+                            world
+                                .send(WorldRequest::UpdatePlayerSlot { player, slot })
+                                .await?;
+                            continue;
+                        }
+
+                        if id == CsSetCreativeModeSlot::ID {
+                            let pkt = CsSetCreativeModeSlot::decode(&mut data)?;
+                            let game_mode = world.get_player_game_mode(player).await?;
+
+                            if game_mode != GameMode::Creative {
+                                continue;
+                            }
+
+                            let slot = pkt.slot as u8;
+                            let item = pkt.item;
+
+                            world
+                                .send(WorldRequest::UpdatePlayerInventory { player, slot, item })
+                                .await?;
+
                             continue;
                         }
 
