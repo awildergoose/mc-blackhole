@@ -373,7 +373,7 @@ pub async fn handle_connection(
                             let pkt = CsMovePlayerPos::decode(&mut data)?;
 
                             world
-                                .send(WorldRequest::UpdatePlayerPosition {
+                                .send(WorldRequest::PlayerMove {
                                     player,
                                     position: Vector3::new(pkt.x, pkt.y, pkt.z),
                                 })
@@ -385,7 +385,7 @@ pub async fn handle_connection(
                             let pkt = CsMovePlayerPosRot::decode(&mut data)?;
 
                             world
-                                .send(WorldRequest::UpdatePlayerPosition {
+                                .send(WorldRequest::PlayerMove {
                                     player,
                                     position: Vector3::new(pkt.x, pkt.y, pkt.z),
                                 })
@@ -539,6 +539,13 @@ pub async fn handle_connection(
                                     .ok_or_else(|| anyhow::anyhow!("bad z value"))?
                                     .trim();
                                 let z = z.parse()?;
+
+                                world
+                                    .send(WorldRequest::SetPlayerPosition {
+                                        player,
+                                        position: Vector3::new(x, y, z),
+                                    })
+                                    .await?;
                                 writer
                                     .write_pkt(ScPlayerPosition::new(
                                         0, x, y, z, 0.0, 0.0, 0.0, 0.0, 0.0, 0,

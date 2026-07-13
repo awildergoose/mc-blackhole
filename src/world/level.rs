@@ -228,7 +228,7 @@ impl Level {
         iso: f32,
         kind: PaletteBlockKind,
         perma: bool,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<u64>> {
         let r2 = radius * radius;
         let eps = 1e-4f32;
 
@@ -241,7 +241,11 @@ impl Level {
         let min_z = (bz as f32 - radius - 1.0).floor() as i32;
         let max_z = (bz as f32 + radius + 1.0).ceil() as i32;
 
-        // TODO: make it melt with the surrounding ground
+        let melt_strength: f32 = 0.75;
+        let max_solid_neighbors: f32 = 6.0;
+
+        let mut to_set: Vec<(i32, i32, i32)> = Vec::new();
+
         for wy in min_y..=max_y {
             for wx in min_x..=max_x {
                 for wz in min_z..=max_z {
@@ -252,18 +256,45 @@ impl Level {
                     let d2 = dz.mul_add(dz, dy.mul_add(dy, dx * dx));
                     let f = r2 / (d2 + eps);
 
-                    if f >= iso {
-                        if perma {
-                            self.set_block_perma(wx, wy, wz, kind).await?;
-                        } else {
-                            self.set_block(wx, wy, wz, kind).await?;
+                    let mut solid_neighbors = 0.0f32;
+
+                    let neighbors = [
+                        (wx + 1, wy, wz),
+                        (wx - 1, wy, wz),
+                        (wx, wy + 1, wz),
+                        (wx, wy - 1, wz),
+                        (wx, wy, wz + 1),
+                        (wx, wy, wz - 1),
+                    ];
+
+                    for (nx, ny, nz) in neighbors {
+                        if self.get_block(nx, ny, nz) != PaletteBlockKind::Air {
+                            solid_neighbors += 1.0;
                         }
+                    }
+
+                    let melt_factor =
+                        melt_strength.mul_add(solid_neighbors / max_solid_neighbors, 1.0);
+                    let f_total = f * melt_factor;
+
+                    if f_total >= iso {
+                        to_set.push((wx, wy, wz));
                     }
                 }
             }
         }
 
-        Ok(())
+        let mut patches = vec![];
+
+        for (wx, wy, wz) in to_set {
+            if perma {
+                patches.push(self.set_block_perma(wx, wy, wz, kind).await?);
+            } else {
+                self.set_block(wx, wy, wz, kind).await?;
+            }
+        }
+
+        Ok(patches)
     }
 
     #[must_use]

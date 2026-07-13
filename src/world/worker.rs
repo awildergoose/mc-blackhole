@@ -37,7 +37,13 @@ pub enum WorldRequest {
         respond: oneshot::Sender<EntityId>,
     },
 
-    UpdatePlayerPosition {
+    /// To be used by commands
+    SetPlayerPosition {
+        player: EntityId,
+        position: Vector3<f64>,
+    },
+    /// To be used when the player moves regularly
+    PlayerMove {
         player: EntityId,
         position: Vector3<f64>,
     },
@@ -166,8 +172,15 @@ impl WorldWorker {
                 WorldRequest::AddPlayer { player, respond } => {
                     let _ = respond.send(self.level.add_player(player));
                 }
-
-                WorldRequest::UpdatePlayerPosition { player, position } => {
+                WorldRequest::SetPlayerPosition { player, position } => {
+                    self.level
+                        .with_entity_mut::<PlayerEntity, _, _>(player, |_, p| {
+                            p.position = position;
+                            p.prev_position = position;
+                        })
+                        .await?;
+                }
+                WorldRequest::PlayerMove { player, position } => {
                     self.level
                         .with_entity_mut::<PlayerEntity, _, _>(player, |_, p| {
                             p.position = position;
@@ -192,7 +205,7 @@ impl WorldWorker {
                     self.level
                         .add_metaball(
                             position,
-                            2.0,
+                            6.0,
                             2.0,
                             super::palette::PaletteBlockKind::OakPlanks,
                             perma,

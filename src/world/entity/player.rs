@@ -91,7 +91,7 @@ impl Entity for PlayerEntity {
     fn tick<'a>(&'a mut self, level: &'a mut Level) -> AsyncTraitFn<'a, anyhow::Result<()>> {
         async_trait_fn!({
             // can you please not cheat, that'd be great :)
-            if self.prev_position.xz().distance2(self.position.xz()) >= 3.0
+            if self.prev_position.xz().distance2(self.position.xz()) >= 4.0
                 && !self.game_mode.can_fly()
             {
                 // roblox work at a pizza place angry sound effect
