@@ -50,6 +50,7 @@ macro_rules! entries {
     };
 }
 
+// TODO: automate the index counting
 entries!(
     Air => 0 => 0,
     Stone => 1 => 1,

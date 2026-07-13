@@ -340,6 +340,15 @@ impl Level {
         Ok(())
     }
 
+    pub fn unload_chunk(&mut self, pos: ChunkPos) {
+        self.chunks.remove(&pos);
+    }
+
+    /// NOTE: this loads the chunk, and does NOT unload it
+    /// if we unload it, then the server would have to reload the chunk every time
+    /// a block patch is added, which in most cases would be really slow and laggy.
+    /// For now, we could assume the original block is air when the chunk is unloaded but
+    /// that might not be a good idea for all use cases.
     fn make_block_patch(
         &mut self,
         wx: i32,
@@ -348,6 +357,7 @@ impl Level {
         kind: PaletteBlockKind,
     ) -> BlockPatch {
         let (cx, cz, lx, lz) = Self::world_to_chunk_and_local(wx, wz);
+        let cpos = Vector2::new(cx, cz);
 
         self.patch_counter += 1;
         BlockPatch::new2(
@@ -356,8 +366,11 @@ impl Level {
             wy,
             lz,
             kind,
-            self.get_chunk(Vector2::new(cx, cz))
-                .get_block_local(lx, wy, lz),
+            if self.is_chunk_loaded(cpos) {
+                self.get_chunk(cpos).get_block_local(lx, wy, lz)
+            } else {
+                PaletteBlockKind::Air
+            },
         )
     }
 
@@ -405,6 +418,27 @@ impl Level {
         }
 
         self.tick_counter += 1;
+
+        if self.tick_counter.is_multiple_of(40) {
+            let r: i64 = i64::from(self.view_distance);
+            let expected: usize = (-r..=r)
+                .map(
+                    #[expect(clippy::cast_precision_loss)]
+                    |x| {
+                        let max_z = ((r * r - x * x) as f64).sqrt().floor() as i64;
+                        (2 * max_z + 1) as usize
+                    },
+                )
+                .sum();
+
+            if self.chunks.len() != expected {
+                println!(
+                    "Loaded chunk count: {}, expected: {expected}",
+                    self.chunks.len()
+                );
+            }
+        }
+
         Ok(())
     }
 }

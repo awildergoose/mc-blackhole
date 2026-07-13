@@ -104,7 +104,7 @@ pub async fn handle_connection(
 
     let mut client_tick = 0;
     let mut body;
-    let mut level = Level::new(16);
+    let mut level = Level::new(8);
     let player = level.add_player(PlayerEntity::new(writer.clone()));
 
     level
@@ -605,7 +605,7 @@ pub async fn handle_connection(
 
                             if command == "ghost" {
                                 // 151
-                                
+
                                 continue;
                             }
 
