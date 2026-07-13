@@ -13,6 +13,7 @@ const NUM_ENTRIES: u32 = 4096;
 const ENTRIES_PER_LONG: u32 = Section::entries_per_long();
 const MASK: u64 = Section::mask();
 const NUM_LONGS: usize = NUM_ENTRIES.div_ceil(ENTRIES_PER_LONG) as usize;
+const NUM_SECTIONS: usize = 24;
 
 impl Section {
     const fn new() -> Self {
@@ -81,7 +82,7 @@ impl Chunk {
     #[must_use]
     pub fn new(x: i32, z: i32) -> Self {
         Self {
-            sections: vec![Section::new(); 32],
+            sections: vec![Section::new(); NUM_SECTIONS],
             x,
             z,
         }
@@ -129,7 +130,7 @@ impl Chunk {
 
         let mut data_bytes = PacketBytes::new();
 
-        for sy in 0..32 {
+        for sy in 0..NUM_SECTIONS {
             data_bytes.put_u16(4096)?; // block count, this doesn't matter as long as it's over 0
 
             // block stuff
