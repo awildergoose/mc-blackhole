@@ -1,4 +1,7 @@
-use std::hash::{DefaultHasher, Hasher};
+use std::{
+    hash::{DefaultHasher, Hasher},
+    sync::LazyLock,
+};
 
 use crate::{STRICT, proto::packet_bytes::PacketBytes, world::palette::PaletteBlockKind};
 
@@ -14,6 +17,7 @@ const ENTRIES_PER_LONG: u32 = Section::entries_per_long();
 const MASK: u64 = Section::mask();
 const NUM_LONGS: usize = NUM_ENTRIES.div_ceil(ENTRIES_PER_LONG) as usize;
 const NUM_SECTIONS: usize = 24;
+static EMPTY_SECTION: LazyLock<Vec<u8>> = LazyLock::new(|| vec![0; NUM_LONGS * size_of::<u64>()]);
 
 impl Section {
     const fn new() -> Self {
@@ -134,7 +138,6 @@ impl Chunk {
         chkbody.put_var_int(0)?; // no heightmaps
 
         let mut data_bytes = PacketBytes::new();
-        let zeroes = vec![0; NUM_LONGS * size_of::<u64>()];
 
         for sy in 0..NUM_SECTIONS {
             data_bytes.put_u16(4096)?; // block count, this doesn't matter as long as it's over 0
@@ -151,7 +154,7 @@ impl Chunk {
                     }
                 }
                 None => {
-                    data_bytes.extend_from_slice(&zeroes);
+                    data_bytes.extend_from_slice(&EMPTY_SECTION);
                 }
             }
 
