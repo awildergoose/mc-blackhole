@@ -142,7 +142,7 @@ impl Entity for PlayerEntity {
                 dx * dx + dz * dz <= radius * radius
             });
 
-            let precise_radius = i64::from(level.view_distance);
+            let precise_radius = i64::from(radius);
 
             for x in -radius..=radius {
                 for z in -radius..=radius {
@@ -251,20 +251,20 @@ impl Entity for PlayerEntity {
             let mut to_forget = vec![];
 
             level.chunks.retain(|pos, _chunk| {
-                let dx = pos.x - player_chunk.x;
-                let dz = pos.y - player_chunk.y;
+                let dx = i64::from(pos.x - player_chunk.x);
+                let dz = i64::from(pos.y - player_chunk.y);
 
-                let res = dx * dx + dz * dz <= radius * radius;
+                let res = dx * dx + dz * dz <= precise_radius * precise_radius;
                 if !res && self.sent_chunks.contains(pos) {
                     to_forget.push(*pos);
                 }
                 res
             });
             self.sent_chunks.retain(|chunk| {
-                let dx = chunk.x - player_chunk.x;
-                let dz = chunk.y - player_chunk.y;
+                let dx = i64::from(chunk.x - player_chunk.x);
+                let dz = i64::from(chunk.y - player_chunk.y);
 
-                dx * dx + dz * dz <= radius * radius
+                dx * dx + dz * dz <= precise_radius * precise_radius
             });
 
             for pos in to_forget {

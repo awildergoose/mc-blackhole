@@ -68,10 +68,10 @@ pub fn do_chunk_generation(params: &mut ChunkGenerationParams) {
     let mut heights = [[0i32; 16]; 16];
 
     // First: FBM
-    for lx in 0..16 {
-        for lz in 0..16 {
-            let wx = f64::from(lx + params.cx * 16);
-            let wz = f64::from(lz + params.cz * 16);
+    for lx in 0..16i32 {
+        for lz in 0..16i32 {
+            let wx = f64::from(lx.saturating_add(params.cx.saturating_mul(16)));
+            let wz = f64::from(lz.saturating_add(params.cz.saturating_mul(16)));
 
             let px = wx * world_scale;
             let pz = wz * world_scale;
@@ -126,10 +126,10 @@ pub fn do_chunk_generation(params: &mut ChunkGenerationParams) {
     let mut cave = None;
     let mut is_single_cave = false;
 
-    for lx in 0..16 {
-        for lz in 0..16 {
-            let wx = f64::from(lx + params.cx * 16);
-            let wz = f64::from(lz + params.cz * 16);
+    for lx in 0..16i32 {
+        for lz in 0..16i32 {
+            let wx = f64::from(lx.saturating_add(params.cx.saturating_mul(16)));
+            let wz = f64::from(lz.saturating_add(params.cz.saturating_mul(16)));
 
             let px = wx * cave_scale;
             let pz = wz * cave_scale;
@@ -219,11 +219,11 @@ pub fn do_chunk_generation(params: &mut ChunkGenerationParams) {
     if is_single_cave && let Some((lx, y, lz)) = cave {
         // double-check this is a single cave by checking surrounding perlin
         // this is really bad performance and code quality wise
-        let chk = |cx, cz| {
-            for lx in 0..16 {
-                for lz in 0..16 {
-                    let wx = f64::from(lx + cx * 16);
-                    let wz = f64::from(lz + cz * 16);
+        let chk = |cx: i32, cz: i32| {
+            for lx in 0..16i32 {
+                for lz in 0..16i32 {
+                    let wx = f64::from(lx.saturating_add(cx.saturating_mul(16)));
+                    let wz = f64::from(lz.saturating_add(cz.saturating_mul(16)));
 
                     let px = wx * cave_scale;
                     let pz = wz * cave_scale;
@@ -249,12 +249,6 @@ pub fn do_chunk_generation(params: &mut ChunkGenerationParams) {
         .iter()
         .any(|c| *c)
         {
-            println!(
-                "ALL GOOD {} {y} {}",
-                params.cx * 16 + lx as i32,
-                params.cz * 16 + lz as i32
-            );
-
             // go upwards!
             for ly in heights[lx as usize][lz as usize]..320 {
                 params
